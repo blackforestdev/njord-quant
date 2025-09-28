@@ -1,0 +1,37 @@
+app:
+  name: njord
+  env: dev
+  timezone: UTC
+
+logging:
+  level: INFO
+  json: true
+  journal_dir: ./var/log/njord
+
+redis:
+  url: "redis://127.0.0.1:6379/0"
+  topics:
+    trades: "md.trades.{symbol}"
+    book:   "md.book.{symbol}"
+    ticker: "md.ticker.{symbol}"
+    intents: "strat.intent"
+    risk: "risk.decision"
+    orders: "exec.order"
+    fills: "exec.fill"
+
+postgres:
+  dsn: "postgresql://njord:password@127.0.0.1:5432/njord"
+
+exchange:
+  venue: binanceus
+  symbols: ["ATOM/USDT"]
+  ws_keepalive_sec: 15
+
+risk:
+  max_notional_per_symbol: 200.0
+  max_daily_loss: 50.0
+  rate_limit_per_min: 30
+
+paths:
+  journal_dir: ./data/journal
+  experiments_dir: ./experiments

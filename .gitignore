@@ -1,0 +1,24 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Data & logs
+var/log/
+data/journal/
+data/cache/
+*.ndjson
+*.sqlite
+
+# Secrets
+config/secrets.enc.yaml
+.secrets/
+.sops.yaml
+
+# OS/editor
+.DS_Store

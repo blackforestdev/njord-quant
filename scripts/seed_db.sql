@@ -1,0 +1,3 @@
+-- Placeholder schema seeds
+-- create database njord; create user njord with password '...';
+-- grant all privileges on database njord to njord;

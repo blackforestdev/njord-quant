@@ -1,0 +1,14 @@
+[Unit]
+Description=Njord Broker (Binance.US)
+After=network-online.target
+
+[Service]
+User=trade
+WorkingDirectory=%h/njord_quant
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/njord_quant/venv/bin/python -m apps.broker_binanceus --config %h/njord_quant/config/base.yaml
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
