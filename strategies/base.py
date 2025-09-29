@@ -1,10 +1,16 @@
-from typing import Iterable
-from core.contracts import OrderIntent, TradeEvent, BookEvent
-from core.time import now_ns
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Any
+
+from core.contracts import OrderIntent
+
 
 class StrategyBase:
-    strategy_id = "base"
+    strategy_id: str = "base"
 
-    def on_event(self, event) -> Iterable[OrderIntent]:
-        # Override in derived classes; yield OrderIntent instances
-        return []
+    def on_event(self, event: Any) -> Iterable[OrderIntent]:
+        """Handle an incoming event and yield zero or more order intents."""
+
+        intents: list[OrderIntent] = []
+        return intents

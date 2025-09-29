@@ -28,9 +28,11 @@ exchange:
   ws_keepalive_sec: 15
 
 risk:
-  max_notional_per_symbol: 200.0
-  max_daily_loss: 50.0
-  rate_limit_per_min: 30
+  per_order_usd_cap: 200.0
+  daily_loss_usd_cap: 50.0
+  orders_per_min_cap: 30
+  kill_switch_file: "/var/run/njord.trading.halt"
+  kill_switch_key: "njord:trading:halt"
 
 paths:
   journal_dir: ./data/journal

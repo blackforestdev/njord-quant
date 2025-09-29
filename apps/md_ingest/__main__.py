@@ -1,3 +1,6 @@
-# Placeholder WS ingest runner. Wire to ccxt.pro later.
-import sys
-print("md_ingest starting (placeholder). args:", sys.argv)
+from __future__ import annotations
+
+from .main import main
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

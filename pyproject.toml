@@ -5,6 +5,10 @@ description = "Local-first, event-driven crypto trading stack using ccxt.pro"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name="Njord Trust"}]
+dependencies = [
+    "structlog>=24.1",
+    "redis>=5.0",
+]
 
 [tool.ruff]
 line-length = 100
