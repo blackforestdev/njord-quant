@@ -16,9 +16,31 @@ No Docker; `systemd` per service; JSON journaling; strict risk layer.
 - `backtest/*`: replay and metrics
 - `deploy/systemd/*`: unit templates
 
-## Phase 3
-- Live trading only arms when `config.app.env` is `live` and `NJORD_ENABLE_LIVE=1`; otherwise the broker stays read-only.
-- Before live placement, both kill switches are consulted: the file at `risk.kill_switch_file` and the optional Redis key `risk.kill_switch_key`.
-- Every live order faces a $10 notional ceiling using the best known trade price (falling back to the intent limit price); violations publish `risk.decisions` denials with reason `live_micro_cap`.
-- Kill switch trips publish `risk.decisions` denials with reason `kill_switch` and block placements.
-- When running dry, orders map to broker requests and are echoed on the `broker.echo` topic for downstream coordination.
+## Roadmap Progress
+
+### Phase 0 — Bootstrap & Guardrails
+- Repo initialized with `pyproject.toml`, `Makefile`, `pre-commit`, `ruff`, `mypy`, and `pytest`.
+- Config loader via Pydantic (`core/config.py`).
+- Structured JSON logging and `sops` secrets placeholder.
+- Base `systemd` unit templates under `systemd/`.
+
+### Phase 1 — Event Bus & Market Data Ingest
+- Redis pub/sub wrapper (`core/bus.py`).
+- Contracts for `TradeEvent`, `BookEvent`, `TickerEvent`.
+- Market data ingest app (`apps/md_ingest`) with NDJSON journaling.
+- Reconnect/backoff logic tested; journaling replay verified.
+
+### Phase 2 — Paper OMS, Risk MVP, Kill-switch
+- Paper trader (`apps/paper_trader`) with simulated fills.
+- Risk engine (`apps/risk_engine`) enforcing notional caps, daily loss caps, and rate guards.
+- Global kill-switch (`core/kill_switch.py`) via file or Redis.
+- Tests include idempotency, drawdown halts, and kill-switch E2E.
+
+### Phase 3 — Live Broker (Binance.US)
+- Live trading only arms when `config.app.env` is `live` and `NJORD_ENABLE_LIVE=1`; otherwise broker stays read-only.
+- Kill switches checked before every live order (file + optional Redis).
+- $10 hard per-order notional ceiling enforced (`risk.decisions` denial if exceeded).
+- Kill switch trips publish `risk.decisions` with reason `kill_switch` and block placements.
+- Dry-run mode echoes broker requests to `broker.echo`.
+
+---
