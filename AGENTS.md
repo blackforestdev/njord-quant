@@ -217,7 +217,10 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 
 ## Micro-Prompt Template (For Sub-Phase Tasks)
 
+**Note:** Detailed task specifications are maintained in [ROADMAP.md](./ROADMAP.md). Use this template for ad-hoc tasks not yet documented there.
+
 Use this template when prompting agents for specific tasks:
+...
 
 ```markdown
 ### Phase <N>.<M> — <Title>
