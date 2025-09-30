@@ -18,6 +18,7 @@ Implement a **robust, research-driven algorithmic trading framework** for crypto
   - Risk caps and kill-switch protections are **never bypassed**
   - **Never commit secrets** — `config/secrets.enc.yaml` stays encrypted
   - Production environment requires explicit flags (`env=live` + `NJORD_ENABLE_LIVE=1`)
+  - Each phase **must not break prior phases** — earlier tests must remain green
 
 ### 2. Iteration Discipline
 - **Atomic commits:** ≤150 lines of code, ≤4 files per commit
@@ -27,6 +28,7 @@ Implement a **robust, research-driven algorithmic trading framework** for crypto
   ```
 - **Failure protocol:** If any check fails → **fix and rerun until all pass**
 - **Output format:** Unified diff (patch) only — no prose explanations unless explicitly requested
+- **Performance guardrail:** Test suite must complete in ≤30s; no long sleeps or unbounded loops
 
 ### 3. Coding Standards
 | Standard | Specification |
@@ -121,6 +123,7 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Strategies must be stateless or use provided `Context`
 - All strategies must emit `OrderIntent` to risk engine (no direct broker calls)
 - Keep each strategy ≤100 LOC
+- Golden tests must remain ≤1k JSONL lines and live under `tests/golden/`
 
 **Deliverables:**
 1. `strategies/base.py` (ABC with `on_event()`)
@@ -262,6 +265,7 @@ All checks pass (green). If red, iterate until green.
 | Random flakiness | Seed RNG: `random.seed(42)` |
 | Async race conditions | Use `asyncio.Event` or `wait_for()` helpers |
 | Network dependency | Mock external calls or skip with `@pytest.mark.skipif` |
+| Golden test bloat | Keep golden tests ≤1k JSONL lines; compress or split if needed |
 
 ### Import Organization
 ```python
@@ -435,10 +439,10 @@ fills.new            # Fill events
 | 1.0 | 2024-01 | Initial bootstrap (Phase 0) |
 | 2.0 | 2024-03 | Event bus + market data (Phase 1) |
 | 3.0 | 2024-06 | Risk engine + paper OMS (Phase 2) |
-| 3.8 | 2024-09 | Strategy plugin framework (Phase 3.8) |
+| 3.8 | 2025-09 | Strategy plugin framework (Phase 3.8, in progress) |
 
 ---
 
-**Last Updated:** 2024-09-30
+**Last Updated:** 2025-09-30
 **Maintained By:** Njord Trust
 **License:** Proprietary
