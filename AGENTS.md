@@ -7,6 +7,16 @@ Implement a **robust, research-driven algorithmic trading framework** for crypto
 **Current Status:** Phase 3.8 — Strategy Plugin Framework
 **Target:** Phase 16 — Production-ready autonomous trading system
 
+## Documentation Hierarchy
+
+This project maintains three levels of agent guidance:
+
+1. **[AGENTS.md](./AGENTS.md)** (this file) — Strategic operating procedures, coding standards, and principles
+2. **[ROADMAP.md](./ROADMAP.md)** — Tactical task-level instructions for each phase/sub-phase
+3. **[CLAUDE.md](./CLAUDE.md)** — Claude Code entry point (references this file)
+
+**For task execution:** Always consult ROADMAP.md for detailed behavioral specifications, acceptance criteria, and file locations. AGENTS.md defines *how* we build; ROADMAP.md defines *what* to build next.
+
 ---
 
 ## Top-Level SOPs (Strategic Operating Procedures)
