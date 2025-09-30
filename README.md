@@ -3,18 +3,28 @@
 Local-first, event-driven trading stack using `ccxt.pro`.
 No Docker; `systemd` per service; JSON journaling; strict risk layer.
 
+## Documentation
+
+### For Development
+- **[AGENTS.md](./AGENTS.md)** — Strategic operating procedures, coding standards, SOPs
+- **[ROADMAP.md](./ROADMAP.md)** — Detailed task-level instructions for each phase/sub-phase
+  *Start here for task execution*
+- **[CLAUDE.md](./CLAUDE.md)** — Claude Code configuration (points to AGENTS.md)
+
+### For Operations
+- **[config/base.yaml](./config/base.yaml)** — Main configuration
+- **[config/strategies.yaml](./config/strategies.yaml)** — Strategy plugin configuration
+- **[deploy/systemd/](./deploy/systemd/)** — Service unit files
+- **[scripts/](./scripts/)** — Operational utilities (kill switch, status checks)
+
+### Current Phase
+**Phase 3.8 — Strategy Plugin Framework** (8 subtasks)
+See [ROADMAP.md](./ROADMAP.md) for detailed breakdown and status.
+
 ## Quick start
 1) `python3 -m venv venv && source venv/bin/activate`
 2) Edit `config/base.yaml` and `config/secrets.enc.yaml`.
 3) `make run-md` / `run-strat` / `run-broker` after adding real code.
-
-## Layout
-- `apps/*`: daemons (ingest, strategy, risk, broker, portfolio, paper, monitor)
-- `core/*`: bus, contracts, time, logging helpers
-- `strategies/*`: plugin strategies
-- `risk/*`: risk rules/gates
-- `backtest/*`: replay and metrics
-- `deploy/systemd/*`: unit templates
 
 ## Roadmap Progress
 
