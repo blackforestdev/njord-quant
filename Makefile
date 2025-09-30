@@ -6,18 +6,46 @@ CONFIG_ROOT ?= .
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install pre-commit fmt lint type test run-md run-strat run-broker run-risk run-paper run-kill-trip run-kill-clear check-kill journal touch
+.PHONY: help venv install pre-commit fmt lint type test roadmap status next run-md run-strat run-broker run-risk run-paper run-kill-trip run-kill-clear check-kill journal touch
 
 help:
-	@echo "Targets:"
+	@echo "Njord Quant — Development Targets"
+	@echo ""
+	@echo "Setup & Tools:"
 	@echo "  venv         - create ./venv"
 	@echo "  install      - install dev tools (ruff, mypy, pytest, pre-commit)"
 	@echo "  pre-commit   - install git hook"
-	@echo "  fmt|lint|type|test - guardrails"
-	@echo "  run-md|run-strat|run-broker|run-risk|run-paper - app runners"
-	@echo "  run-kill-trip|run-kill-clear|check-kill - kill switch helpers"
-	@echo "  journal      - make data/journal"
-	@echo "  touch        - drop .keep.filetype in empty dirs"
+	@echo ""
+	@echo "Code Quality (Guardrails):"
+	@echo "  fmt          - format code with ruff"
+	@echo "  lint         - lint code with ruff"
+	@echo "  type         - type-check with mypy"
+	@echo "  test         - run tests with pytest"
+	@echo ""
+	@echo "Roadmap & Planning:"
+	@echo "  roadmap      - view full development roadmap"
+	@echo "  status       - show current phase task status"
+	@echo "  next         - show next planned task"
+	@echo ""
+	@echo "Service Runners:"
+	@echo "  run-md       - start market data ingest (requires SYMBOL and VENUE)"
+	@echo "  run-strat    - start strategy runner"
+	@echo "  run-broker   - start broker service"
+	@echo "  run-risk     - start risk engine"
+	@echo "  run-paper    - start paper trader"
+	@echo ""
+	@echo "Kill Switch:"
+	@echo "  run-kill-trip  - trip kill switch (file)"
+	@echo "  run-kill-clear - clear kill switch (file)"
+	@echo "  check-kill     - check kill switch status"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  journal      - create data/journal directory"
+	@echo "  touch        - add .keep.filetype to empty dirs"
+	@echo ""
+	@echo "Usage Examples:"
+	@echo "  make run-md SYMBOL=ATOM/USDT VENUE=binanceus"
+	@echo "  make fmt && make lint && make type && make test"
 
 venv:
 	@if [ ! -d venv ]; then python3 -m venv venv; fi
@@ -44,6 +72,43 @@ type:
 test:
 	$(PY) -m pytest -q
 
+# Roadmap navigation targets
+roadmap:
+	@if [ ! -f ROADMAP.md ]; then \
+		echo "Error: ROADMAP.md not found"; \
+		exit 1; \
+	fi
+	@echo "📋 Opening ROADMAP.md..."
+	@less ROADMAP.md
+
+status:
+	@if [ ! -f ROADMAP.md ]; then \
+		echo "Error: ROADMAP.md not found"; \
+		exit 1; \
+	fi
+	@echo "📊 Current Phase Status (Phase 3.8):"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@grep -E "^#### Task 3\.8\.[0-9]" ROADMAP.md | head -10 || echo "No tasks found for Phase 3.8"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@echo "Legend: ✅ Complete | 🚧 In Progress | 📋 Planned | ⚠️ Blocked | 🔄 Rework"
+	@echo ""
+	@echo "For full details: make roadmap"
+
+next:
+	@if [ ! -f ROADMAP.md ]; then \
+		echo "Error: ROADMAP.md not found"; \
+		exit 1; \
+	fi
+	@echo "🎯 Next Planned Task:"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@grep -A 20 "📋" ROADMAP.md | head -25 || echo "No planned tasks found"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@echo "To implement: Review task in ROADMAP.md, then run:"
+	@echo "  make fmt && make lint && make type && make test"
+
+# Service runners
 run-md:
 	@if [ -z "$(SYMBOL)" ] || [ -z "$(VENUE)" ]; then \
 		echo "Usage: make run-md SYMBOL=ATOM/USDT VENUE=binanceus"; \
@@ -63,6 +128,7 @@ run-risk:
 run-paper:
 	$(PY) -m apps.paper_trader.main --config-root $(CONFIG_ROOT) || true
 
+# Kill switch helpers
 run-kill-trip:
 	$(PY) scripts/njord_kill.py --config-root $(CONFIG_ROOT) trip-file
 
@@ -72,6 +138,7 @@ run-kill-clear:
 check-kill:
 	$(PY) scripts/njord_kill.py --config-root $(CONFIG_ROOT) check
 
+# Utilities
 journal:
 	mkdir -p data/journal && echo "journals in data/journal"
 
