@@ -52,6 +52,26 @@ Never let strategies call broker directly.
 
 ---
 
+## Task Instructions
+
+**📋 For detailed task specifications, see [ROADMAP.md](./ROADMAP.md)**
+
+ROADMAP.md contains:
+- Detailed behavioral specifications for each phase
+- Explicit acceptance criteria
+- File locations and LOC estimates
+- Dependency chains between tasks
+- Status tracking (✅ Complete | 🚧 In Progress | 📋 Planned)
+
+**Example workflow:**
+1. Check ROADMAP.md for current phase (currently 3.8)
+2. Find next task with 📋 status
+3. Verify dependencies are ✅
+4. Follow task instructions exactly
+5. Update status to 🚧 when starting, ✅ when complete
+
+---
+
 ## Quick Fix Patterns
 
 | Issue | Solution |
