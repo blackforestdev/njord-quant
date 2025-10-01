@@ -825,8 +825,8 @@ class OHLCVBar:
 
 ---
 
-### Phase 4.5 — Gzip Compression Service 📋
-**Status:** Planned
+### Phase 4.5 — Gzip Compression Service ✅
+**Status:** Complete
 **Dependencies:** 4.4
 **Task:** Compress old OHLCV journals
 
@@ -842,11 +842,11 @@ class OHLCVBar:
 - tests/test_compression.py
 
 **Acceptance:**
-- Compressed files readable with gzip
-- Original content preserved bit-for-bit
-- Files older than 24h correctly identified
-- Compression ratio >50% on test data
-- `make fmt lint type test` green
+- [x] Compressed files readable with gzip
+- [x] Original content preserved bit-for-bit
+- [x] Files older than 24h correctly identified
+- [x] Compression ratio >50% on test data
+- [x] `make fmt lint type test` green
 
 ---
 
