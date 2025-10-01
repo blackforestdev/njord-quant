@@ -111,42 +111,62 @@ def parse_timestamp(ts_str: str) -> int:
 
     Returns:
         Epoch nanoseconds
+
+    Raises:
+        ValueError: If timestamp format is invalid
     """
-    dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-    epoch_seconds = dt.timestamp()
-    return int(epoch_seconds * 1_000_000_000)
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        epoch_seconds = dt.timestamp()
+        return int(epoch_seconds * 1_000_000_000)
+    except (ValueError, AttributeError) as e:
+        raise ValueError(
+            f"Invalid timestamp format: {ts_str}. "
+            f"Expected ISO 8601 format (e.g., 2025-09-01T00:00:00Z)"
+        ) from e
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="OHLCV replay engine")
+    parser = argparse.ArgumentParser(
+        description="OHLCV replay engine - Replay historical market data from journals",
+        epilog="Example: python -m apps.replay_engine --symbol ATOM/USDT --timeframe 1m "
+        "--start 2025-09-01T00:00:00Z --end 2025-09-30T23:59:59Z --speed 10x",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--symbol",
         required=True,
-        help="Trading symbol (e.g., ATOM/USDT)",
+        metavar="SYM",
+        help="Trading symbol (e.g., ATOM/USDT, BTC/USDT)",
     )
     parser.add_argument(
         "--timeframe",
         default="1m",
-        help="Timeframe (default: 1m)",
+        metavar="TF",
+        help="Timeframe: 1m, 5m, 15m, 1h, 4h, 1d (default: 1m)",
     )
     parser.add_argument(
         "--start",
         required=True,
-        help="Start timestamp (ISO 8601, e.g., 2025-09-01T00:00:00Z)",
+        metavar="TS",
+        help="Start timestamp in ISO 8601 format (e.g., 2025-09-01T00:00:00Z)",
     )
     parser.add_argument(
         "--end",
         required=True,
-        help="End timestamp (ISO 8601, e.g., 2025-09-30T23:59:59Z)",
+        metavar="TS",
+        help="End timestamp in ISO 8601 format (e.g., 2025-09-30T23:59:59Z)",
     )
     parser.add_argument(
         "--speed",
         default="1x",
-        help="Replay speed (1x, 10x, 100x, max). Default: 1x",
+        metavar="MULT",
+        help="Replay speed multiplier: 1x, 10x, 100x, max (default: 1x)",
     )
     parser.add_argument(
         "--config",
         default="./config/base.yaml",
+        metavar="PATH",
         help="Path to base config file (default: ./config/base.yaml)",
     )
     return parser
@@ -160,25 +180,44 @@ def parse_speed(speed_str: str) -> float:
 
     Returns:
         Speed multiplier (0 = max speed)
+
+    Raises:
+        ValueError: If speed format is invalid or negative
     """
     speed_str = speed_str.lower().strip()
     if speed_str == "max":
         return 0.0
-    if speed_str.endswith("x"):
-        return float(speed_str[:-1])
-    return float(speed_str)
+
+    try:
+        multiplier = float(speed_str[:-1]) if speed_str.endswith("x") else float(speed_str)
+
+        if multiplier < 0:
+            raise ValueError("Speed multiplier cannot be negative")
+
+        return multiplier
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid speed format: {speed_str}. Expected format like '1x', '10x', '100x', or 'max'"
+        ) from e
 
 
 async def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Parse timestamps
-    start_ns = parse_timestamp(args.start)
-    end_ns = parse_timestamp(args.end)
+    try:
+        # Parse timestamps
+        start_ns = parse_timestamp(args.start)
+        end_ns = parse_timestamp(args.end)
 
-    # Parse speed
-    speed_multiplier = parse_speed(args.speed)
+        # Validate time range
+        if start_ns >= end_ns:
+            parser.error("Start time must be before end time")
+
+        # Parse speed
+        speed_multiplier = parse_speed(args.speed)
+    except ValueError as e:
+        parser.error(str(e))
 
     # Load config
     config = load_config(Path(args.config).parent)

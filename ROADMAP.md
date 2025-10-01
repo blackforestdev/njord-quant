@@ -935,8 +935,8 @@ class JournalReader:
 
 ---
 
-### Phase 4.9 — Replay CLI 📋
-**Status:** Planned
+### Phase 4.9 — Replay CLI ✅
+**Status:** Complete
 **Dependencies:** 4.8
 **Task:** Command-line interface for replay
 
@@ -955,20 +955,20 @@ python -m apps.replay_engine \
 - tests/test_replay_cli.py
 
 **Acceptance:**
-- All CLI arguments parsed correctly
-- Date/time parsing handles ISO 8601
-- Invalid args produce helpful error messages
-- CLI help text complete and accurate
-- `make fmt lint type test` green
+- [x] All CLI arguments parsed correctly
+- [x] Date/time parsing handles ISO 8601
+- [x] Invalid args produce helpful error messages
+- [x] CLI help text complete and accurate
+- [x] `make fmt lint type test` green
 
 ---
 
 **Phase 4 Acceptance Criteria:**
-- [ ] All 9 tasks completed
-- [ ] make fmt lint type test green
-- [ ] OHLCV bars persist and compress correctly
-- [ ] Replay deterministic across all timeframes
-- [ ] Journals rotate without data loss
+- [x] All 9 tasks completed
+- [x] make fmt lint type test green
+- [x] OHLCV bars persist and compress correctly
+- [x] Replay deterministic across all timeframes
+- [x] Journals rotate without data loss
 
 ---
 
