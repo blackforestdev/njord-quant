@@ -520,7 +520,7 @@ class StrategyBase(ABC):
 
 ---
 
-#### Task 3.8.2 — Strategy Context 📋
+#### Task 3.8.2 — Strategy Context ✅
 **Files:** `strategies/context.py`
 
 **API:**
