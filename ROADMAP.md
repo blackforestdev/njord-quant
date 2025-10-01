@@ -1211,8 +1211,8 @@ Equity curve saved to: var/backtest/equity_trendline_break_v1_ATOMUSDT.ndjson
 
 ---
 
-### Phase 5.8 — Parameter Sweep Harness 📋
-**Status:** Planned
+### Phase 5.8 — Parameter Sweep Harness ✅
+**Status:** Complete
 **Dependencies:** 5.7
 **Task:** Run backtests across parameter ranges
 
