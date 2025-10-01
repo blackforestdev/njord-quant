@@ -1,56 +1,99 @@
 # Njord Quant
 
-Local-first, event-driven trading stack using `ccxt.pro`.
-No Docker; `systemd` per service; JSON journaling; strict risk layer.
+Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency markets. The platform delivers a research-to-live pipeline with deterministic testing, strict risk controls, and modular services orchestrated through Redis pub/sub topics.
 
-## Documentation
+## Overview
+- **Mission:** Provide a robust framework that takes strategies from research, through backtesting and paper trading, into live execution without compromising safety.
+- **Exchange Coverage:** Binance.US via CCXT Pro, with pluggable adapters for future venues.
+- **Runtime Model:** `systemd`-managed daemons; no Docker dependencies.
+- **Data Guarantees:** Append-only NDJSON journaling, replayable event history, and deterministic goldens.
 
-### For Development
-- **[AGENTS.md](./AGENTS.md)** — Strategic operating procedures, coding standards, SOPs
-- **[ROADMAP.md](./ROADMAP.md)** — Detailed task-level instructions for each phase/sub-phase
-  *Start here for task execution*
-- **[CLAUDE.md](./CLAUDE.md)** — Claude Code configuration (points to AGENTS.md)
+## Core Capabilities
+- Market data ingestion with deduplication, journaling, and reconnect logic.
+- Strategy plugin framework with hot-swappable strategies that emit `OrderIntent` events routed through the risk engine.
+- Risk engine enforcing notional caps, loss limits, rate guards, and kill-switch controls.
+- Paper trading OMS and dry-run live broker adapter to ensure risk-first execution.
+- Deterministic backtesting engine (Phase 5) with replay, fill simulation, and equity curve analysis.
 
-### For Operations
-- **[config/base.yaml](./config/base.yaml)** — Main configuration
-- **[config/strategies.yaml](./config/strategies.yaml)** — Strategy plugin configuration
-- **[deploy/systemd/](./deploy/systemd/)** — Service unit files
-- **[scripts/](./scripts/)** — Operational utilities (kill switch, status checks)
+## System Architecture
+- **core/**: Shared primitives such as the Pydantic config loader, structured logging, Redis bus wrapper, contracts, kill switch helpers, and NDJSON journals.
+- **apps/**: Long-running services (`md_ingest`, `risk_engine`, `paper_trader`, `broker_binanceus`) deployed under `systemd`.
+- **strategies/**: Strategy plugin framework with registry/manager, sample strategies, and golden tests for deterministic signal generation.
+- **risk/**: Risk policy modules applied by the risk engine.
+- **backtest/**: Deterministic replay engine, fill simulation, and analytics tooling (Phase 5 workstream).
+- **tests/**: Unit, integration, and golden suites ensuring strict guardrails.
 
-### Current Phase
-**Phase 5 — Backtester** (9 subtasks)
-See [ROADMAP.md](./ROADMAP.md) for detailed breakdown and status.
+### Event Flow
+1. `apps/md_ingest` streams trades/books via CCXT Pro, deduplicates events, and publishes to Redis topics (`md.trades.*`, `md.book.*`) while journaling to `var/log/njord/`.
+2. Strategies subscribe to the bus, build signals using injected context (positions, prices, utilities), and emit `OrderIntent` events.
+3. The risk engine validates intents against kill switches, caps, and policy modules, publishing `risk.decisions` for approved orders.
+4. Paper trader or live broker services act on decisions, generate fills and position snapshots, and broadcast results back to the bus.
 
-## Quick start
-1) `python3 -m venv venv && source venv/bin/activate`
-2) Edit `config/base.yaml` and `config/secrets.enc.yaml`.
-3) `make run-md` / `run-strat` / `run-broker` after adding real code.
+## Documentation Map
+- [AGENTS.md](./AGENTS.md): Strategic SOPs, coding standards, and non-negotiable guardrails.
+- [ROADMAP.md](./ROADMAP.md): Phase-by-phase implementation tasks and acceptance criteria (current focus: Phase 5).
+- [CLAUDE.md](./CLAUDE.md): Claude Code entry point referencing AGENTS.md.
+- [docs/](./docs): Supplemental design notes and decision records (as available).
 
-## Roadmap Progress
+## Current Phase
+**Phase 5 — Backtester**
+- Extends the platform with deterministic backtest contracts, replay engine core, fill simulation, equity curve tracking, and research-grade performance metrics.
+- Builds on completed strategy framework (Phase 3.8) and live broker integration (Phase 3) to support research → paper → backtest parity.
+See [ROADMAP.md#phase-5-—-backtester](./ROADMAP.md#phase-5-—-backtester) for workstream breakdown and acceptance criteria.
 
-### Phase 0 — Bootstrap & Guardrails
-- Repo initialized with `pyproject.toml`, `Makefile`, `pre-commit`, `ruff`, `mypy`, and `pytest`.
-- Config loader via Pydantic (`core/config.py`).
-- Structured JSON logging and `sops` secrets placeholder.
-- Base `systemd` unit templates under `systemd/`.
+## Project Structure
+```text
+njord_quant/
+├── apps/               # Service daemons (md_ingest, risk_engine, paper_trader, broker_binanceus)
+├── backtest/           # Backtesting engine components and analytics tooling (Phase 5 in progress)
+├── config/             # Environment configuration and encrypted secrets
+├── core/               # Shared primitives (config, logging, bus, contracts, journals, kill switch)
+├── risk/               # Risk rule modules
+├── strategies/         # Strategy plugin framework and samples
+├── tests/              # Unit, integration, and golden suites
+└── var/                # Structured logs and runtime state (append-only NDJSON)
+```
 
-### Phase 1 — Event Bus & Market Data Ingest
-- Redis pub/sub wrapper (`core/bus.py`).
-- Contracts for `TradeEvent`, `BookEvent`, `TickerEvent`.
-- Market data ingest app (`apps/md_ingest`) with NDJSON journaling.
-- Reconnect/backoff logic tested; journaling replay verified.
+## Getting Started
+1. Create a virtual environment: `python3 -m venv venv && source venv/bin/activate`
+2. Install dependencies and tooling: `make install`
+3. Configure environment files: update `config/base.yaml` and `config/strategies.yaml`; keep secrets encrypted in `config/secrets.enc.yaml`
+4. Run services locally using the provided make targets (`make run-md`, `make run-risk`, `make run-paper`, `make run-strat`)
+5. Inspect logs under `var/log/njord/` and journal outputs to validate event flow
 
-### Phase 2 — Paper OMS, Risk MVP, Kill-switch
-- Paper trader (`apps/paper_trader`) with simulated fills.
-- Risk engine (`apps/risk_engine`) enforcing notional caps, daily loss caps, and rate guards.
-- Global kill-switch (`core/kill_switch.py`) via file or Redis.
-- Tests include idempotency, drawdown halts, and kill-switch E2E.
+## Development Workflow & Guardrails
+- Python 3.11 with `ruff` (format/lint), `mypy --strict`, and `pytest`; guardrails must remain green.
+- Run `make fmt && make lint && make type && make test` before submitting changes.
+- Commits follow Conventional Commit format and remain ≤150 LOC across ≤4 files.
+- Tests must be deterministic: avoid network I/O and long sleeps; use fixed seeds or injected clocks when needed.
+- Never bypass kill-switch checks or commit decrypted secrets.
 
-### Phase 3 — Live Broker (Binance.US)
-- Live trading only arms when `config.app.env` is `live` and `NJORD_ENABLE_LIVE=1`; otherwise broker stays read-only.
-- Kill switches checked before every live order (file + optional Redis).
-- $10 hard per-order notional ceiling enforced (`risk.decisions` denial if exceeded).
-- Kill switch trips publish `risk.decisions` with reason `kill_switch` and block placements.
-- Dry-run mode echoes broker requests to `broker.echo`.
+## Services & Workloads
+- `apps/md_ingest`: CCXT Pro market data daemon with deduplication, backoff, and journaling.
+- `apps/risk_engine`: Validates `OrderIntent` events against policy modules and kill-switch state.
+- `apps/paper_trader`: Simulated fills, position tracking, and PnL calculations for dry-run environments.
+- `apps/broker_binanceus`: Live adapter enforcing dry-run defaults, notional caps, and kill-switch compliance.
 
----
+## Configuration & Secrets
+- `config/base.yaml`: Core application settings (environment, Redis endpoints, logging directories).
+- `config/strategies.yaml`: Strategy registry and parameterization for the plugin framework.
+- `config/secrets.enc.yaml`: SOPS-encrypted secrets; never commit decrypted values.
+- Live trading requires explicit flags: `app.env=live` and `NJORD_ENABLE_LIVE=1`.
+
+## Logging & Observability
+- Structured logging via `structlog` writes NDJSON entries to `var/log/njord/`.
+- Journals capture market data, intents, and fills for replay and audit.
+- Operational scripts (kill switch, status checks) live in `scripts/`; systemd units reside in `deploy/systemd/`.
+
+## Roadmap Snapshot
+- **Phase 0 — Bootstrap & Guardrails:** Tooling, config loader, structured logging, NDJSON journal ✅
+- **Phase 1 — Event Bus & Market Data:** Redis bus, contracts, market data ingest daemon ✅
+- **Phase 2 — Risk Engine & Paper OMS:** Risk policies, paper trader, kill-switch integrations ✅
+- **Phase 3 — Live Broker:** Binance.US adapter with dry-run safeguards and kill-switch enforcement ✅
+- **Phase 4 — Market Data Storage:** Persistent OHLCV/tick storage, compression, and replay hooks ✅
+- **Phase 5 — Backtester:** Contracts, engine core, fill simulation, equity curve, metrics, CLI, golden tests, parameter sweeps, and reporting 🚧
+- **Phase 6–16:** Portfolio allocator, research APIs, execution enhancements, telemetry, compliance, deployment, and optimization initiatives 📋
+
+## Support & Licensing
+- Maintained by **Njord Trust**.
+- Proprietary license; consult organizational policies for usage and distribution rights.

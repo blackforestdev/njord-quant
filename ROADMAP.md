@@ -1074,8 +1074,8 @@ class BacktestResult:
 
 ---
 
-### Phase 5.4 — Equity Curve Calculation 📋
-**Status:** Planned
+### Phase 5.4 — Equity Curve Calculation ✅
+**Status:** Complete
 **Dependencies:** 5.3
 **Task:** Track portfolio value over time
 
