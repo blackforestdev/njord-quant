@@ -21,6 +21,7 @@ from portfolio.allocation import AllocationCalculator
 from portfolio.contracts import PortfolioSnapshot
 from portfolio.position_sizer import PositionSizer
 from portfolio.rebalancer import RebalancePlan, Rebalancer
+from portfolio.risk_adjusted import RiskAdjustedAllocator
 from portfolio.tracker import PortfolioTracker
 
 FILL_TOPIC_DEFAULT = "exec.fill"
@@ -45,6 +46,8 @@ class PortfolioManager:
     intents_topic: str
     min_rebalance_wait_ns: int
     journal: NdjsonJournal | None = None
+    risk_adjuster: RiskAdjustedAllocator | None = None
+    performance_history_fn: Callable[[], dict[str, list[float]]] | None = None
     clock_ns: Callable[[], int] = time.time_ns
     _last_rebalance_ns: int = field(default=0, init=False)
 
@@ -80,6 +83,23 @@ class PortfolioManager:
             for strategy_id in strategy_ids
         }
         targets = self.allocator.calculate_targets(current_allocations=current_allocations)
+        weights = {
+            strategy_id: capital / self.allocator.config.total_capital
+            for strategy_id, capital in targets.items()
+        }
+
+        if self.risk_adjuster is not None:
+            performance_history = (
+                self.performance_history_fn() if self.performance_history_fn else {}
+            )
+            adjusted_weights = self.risk_adjuster.calculate_adjusted_allocations(
+                performance_history=performance_history,
+                base_allocations=weights,
+            )
+            targets = {
+                strategy_id: adjusted_weights[strategy_id] * self.allocator.config.total_capital
+                for strategy_id in adjusted_weights
+            }
         drift = self.allocator.calculate_drift(current_allocations, targets)
 
         if not self.allocator.needs_rebalance(
@@ -156,6 +176,7 @@ async def run_manager(config: Config, manager_cfg: ManagerConfig) -> None:
     allocator = AllocationCalculator(config.portfolio)
     sizer = PositionSizer(config.portfolio)
     rebalancer = Rebalancer(allocator, sizer)
+    risk_adjuster = RiskAdjustedAllocator(allocator)
 
     journal = NdjsonJournal(log_dir / "portfolio.ndjson")
     manager = PortfolioManager(
@@ -163,6 +184,8 @@ async def run_manager(config: Config, manager_cfg: ManagerConfig) -> None:
         tracker=tracker,
         allocator=allocator,
         rebalancer=rebalancer,
+        risk_adjuster=risk_adjuster,
+        performance_history_fn=lambda: {},
         snapshot_topic=manager_cfg.snapshot_topic,
         intents_topic=config.redis.topics.intents,
         min_rebalance_wait_ns=manager_cfg.min_rebalance_wait_sec * 1_000_000_000,

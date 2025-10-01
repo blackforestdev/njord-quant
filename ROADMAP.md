@@ -1680,8 +1680,8 @@ python -m apps.portfolio_manager --config ./config/base.yaml
 
 ---
 
-### Phase 6.7 — Risk-Adjusted Allocation 📋
-**Status:** Planned
+### Phase 6.7 — Risk-Adjusted Allocation ✅
+**Status:** Complete
 **Dependencies:** 6.6
 **Task:** Adjust allocations based on strategy performance metrics
 
