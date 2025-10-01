@@ -41,10 +41,10 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - [docs/](./docs): Supplemental design notes and decision records (as available).
 
 ## Current Phase
-**Phase 6 — Portfolio Allocator**
-- Introduces contracts, allocation calculators, position sizing, rebalancing, and portfolio management services for multi-strategy capital deployment.
-- Builds atop the completed backtesting engine (Phase 5) to support cross-strategy analytics, golden portfolio tests, and portfolio-level reporting.
-See [ROADMAP.md#phase-6-—-portfolio-allocator](./ROADMAP.md#phase-6-—-portfolio-allocator) for task-level details and acceptance criteria.
+**Phase 7 — Research API**
+- Kickstarts researcher tooling with portfolio-aware data access (pandas/PyArrow), backtest result loaders, and notebook-friendly helpers.
+- Builds on the completed portfolio allocator (Phase 6) to surface strategy and portfolio metrics for offline analysis.
+See [ROADMAP.md#phase-7-—-research-api](./ROADMAP.md#phase-7-—-research-api) for the upcoming task breakdown and acceptance criteria.
 
 ## Project Structure
 ```text
@@ -55,7 +55,7 @@ njord_quant/
 ├── core/               # Shared primitives (config, logging, bus, contracts, journals, kill switch)
 ├── risk/               # Risk rule modules
 ├── strategies/         # Strategy plugin framework and samples
-├── portfolio/          # Portfolio allocator contracts, sizing, rebalancing, and reports (Phase 6 in progress)
+├── portfolio/          # Portfolio allocator, risk adjustment, reporting, and manager integration
 ├── tests/              # Unit, integration, and golden suites
 └── var/                # Structured logs and runtime state (append-only NDJSON)
 ```
@@ -100,7 +100,7 @@ njord_quant/
 - **Phase 3 — Live Broker:** Binance.US adapter with dry-run safeguards and kill-switch enforcement ✅
 - **Phase 4 — Market Data Storage:** Persistent OHLCV/tick storage, compression, and replay hooks ✅
 - **Phase 5 — Backtester:** Contracts, engine core, fill simulation, equity curve, metrics, CLI, golden tests, parameter sweeps, and reporting ✅
-- **Phase 6 — Portfolio Allocator:** Multi-strategy capital allocation, rebalancing, dynamic risk weighting, portfolio backtesting, and reporting 🚧
+- **Phase 6 — Portfolio Allocator:** Multi-strategy capital allocation, risk adjustment, portfolio backtesting, and reporting ✅
 - **Phase 7–16:** Research APIs, execution enhancements, telemetry, compliance, deployment, and optimization initiatives 📋
 
 ## Support & Licensing
