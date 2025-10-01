@@ -613,7 +613,7 @@ class StrategyManager:
 
 ---
 
-#### Task 3.8.5 — Config Schema 📋
+#### Task 3.8.5 — Config Schema ✅
 **Files:** `config/strategies.yaml`
 
 **Schema:**

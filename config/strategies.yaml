@@ -1,0 +1,29 @@
+# Strategy Plugin Configuration
+# Each strategy requires:
+#   - id: unique identifier
+#   - class: fully-qualified Python class path
+#   - enabled: true/false (default: true)
+#   - symbols: list of trading symbols
+#   - events: list of Redis topics to subscribe to
+#   - params: strategy-specific parameters
+
+strategies:
+  - id: trendline_break_v1
+    class: strategies.samples.trendline_break.TrendlineBreak
+    enabled: true
+    symbols: ["ATOM/USDT"]
+    events: ["md.trades.*"]
+    params:
+      lookback_periods: 20
+      breakout_threshold: 0.02
+
+  - id: rsi_tema_bb_v1
+    class: strategies.samples.rsi_tema_bb.RsiTemaBb
+    enabled: false
+    symbols: ["ATOM/USDT"]
+    events: ["md.trades.*"]
+    params:
+      rsi_period: 14
+      tema_period: 9
+      bb_period: 20
+      bb_std: 2.0
