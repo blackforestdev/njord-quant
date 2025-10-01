@@ -576,7 +576,7 @@ class StrategyRegistry:
 
 ---
 
-#### Task 3.8.4 — StrategyManager 📋
+#### Task 3.8.4 — StrategyManager ✅
 **Files:** `strategies/manager.py`
 
 **API:**
