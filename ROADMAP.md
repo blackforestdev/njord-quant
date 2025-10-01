@@ -1138,8 +1138,8 @@ def calculate_metrics(equity_curve: list[tuple[int, float]]) -> dict[str, float]
 
 ---
 
-### Phase 5.6 — Backtest Runner CLI 📋
-**Status:** Planned
+### Phase 5.6 — Backtest Runner CLI ✅
+**Status:** Complete
 **Dependencies:** 5.5
 **Task:** Command-line interface for running backtests
 
