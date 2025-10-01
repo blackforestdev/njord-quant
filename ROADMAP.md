@@ -1379,8 +1379,8 @@ Each task builds on the previous, maintaining clean separation of concerns.
 
 ---
 
-### Phase 6.1 — Portfolio Contracts 📋
-**Status:** Planned
+### Phase 6.1 — Portfolio Contracts ✅
+**Status:** Complete
 **Dependencies:** 5.9 (Backtest Report Generator)
 **Task:** Define portfolio allocation contracts
 
