@@ -1,0 +1,14 @@
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 1000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 2000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 3000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 4000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 5000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.22, "ts_local_ns": 6000}
+{"type": "expect", "side": "buy", "reason": "breakout above flat trendline"}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 7000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 8000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 9000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 10000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 10.0, "ts_local_ns": 11000}
+{"type": "event", "symbol": "ATOM/USDT", "price": 9.78, "ts_local_ns": 12000}
+{"type": "expect", "side": "sell", "reason": "breakout below flat trendline"}

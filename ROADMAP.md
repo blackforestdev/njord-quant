@@ -648,7 +648,7 @@ strategies:
 
 ---
 
-#### Task 3.8.6 — Sample: Trendline Break 📋
+#### Task 3.8.6 — Sample: Trendline Break ✅
 **Files:** `strategies/samples/trendline_break.py`
 
 **Logic:**
