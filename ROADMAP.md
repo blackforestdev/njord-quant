@@ -545,7 +545,7 @@ class StrategyContext:
 
 ---
 
-#### Task 3.8.3 — StrategyRegistry 📋
+#### Task 3.8.3 — StrategyRegistry ✅
 **Files:** `strategies/registry.py`
 
 **API:**
