@@ -18,6 +18,7 @@ research = [
     "pandas-stubs>=2.0",
     "pyarrow>=14.0",
     "matplotlib>=3.7",
+    "types-matplotlib>=3.7",
     "jupyter>=1.0",
     "notebook>=7.0",
 ]
@@ -29,6 +30,10 @@ target-version = "py311"
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "matplotlib.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-q"
