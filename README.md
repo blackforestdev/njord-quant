@@ -106,5 +106,5 @@ njord_quant/
 - **Phase 7–16:** Research APIs, execution enhancements, telemetry, compliance, deployment, and optimization initiatives 📋
 
 ## Support & Licensing
-- Maintained by **Njord Trust**.
+- Maintained by **Njord Trust LLC**.
 - Proprietary license; consult organizational policies for usage and distribution rights.
