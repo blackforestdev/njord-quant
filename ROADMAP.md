@@ -719,8 +719,8 @@ python -m apps.strategy_runner --config ./config/base.yaml
 
 ## Phase 4 — Market Data Storage 📋
 
-### Phase 4.1 — OHLCV Bar Dataclass 📋
-**Status:** Planned
+### Phase 4.1 — OHLCV Bar Dataclass ✅
+**Status:** Complete
 **Dependencies:** 1.2 (Market Data Ingest)
 **Task:** Define OHLCV bar contract
 

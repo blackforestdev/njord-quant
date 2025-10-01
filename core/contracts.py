@@ -76,4 +76,19 @@ class PositionSnapshot:
     ts_ns: int
 
 
+@dataclass(frozen=True)
+class OHLCVBar:
+    """OHLCV (Open-High-Low-Close-Volume) bar for a given timeframe."""
+
+    symbol: str
+    timeframe: str  # "1m", "5m", "15m", "1h", etc.
+    ts_open: int  # epoch nanoseconds
+    ts_close: int  # epoch nanoseconds
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
 Event2 = OrderIntent | RiskDecision | OrderEvent | FillEvent | PositionSnapshot
