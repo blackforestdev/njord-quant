@@ -668,7 +668,7 @@ strategies:
 
 ---
 
-#### Task 3.8.7 — Sample: RSI + TEMA + Bollinger Bands 📋
+#### Task 3.8.7 — Sample: RSI + TEMA + Bollinger Bands ✅
 **Files:** `strategies/samples/rsi_tema_bb.py`
 
 **Logic:**
