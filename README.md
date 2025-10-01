@@ -18,7 +18,7 @@ No Docker; `systemd` per service; JSON journaling; strict risk layer.
 - **[scripts/](./scripts/)** — Operational utilities (kill switch, status checks)
 
 ### Current Phase
-**Phase 3.8 — Strategy Plugin Framework** (8 subtasks)
+**Phase 5 — Backtester** (9 subtasks)
 See [ROADMAP.md](./ROADMAP.md) for detailed breakdown and status.
 
 ## Quick start
