@@ -479,8 +479,8 @@ if file_tripped(path) or await redis_tripped(url, key):
 
 ---
 
-### Phase 3.8 — Strategy Plugin Framework 🚧
-**Status:** In Progress
+### Phase 3.8 — Strategy Plugin Framework ✅
+**Status:** Complete
 **Dependencies:** 3.7, 2.4
 **Task:** Implement hot-swappable strategy system
 
@@ -689,7 +689,7 @@ strategies:
 
 ---
 
-#### Task 3.8.8 — Strategy Runner Service 📋
+#### Task 3.8.8 — Strategy Runner Service ✅
 **Files:** `apps/strategy_runner/main.py`
 
 **Behavior:**
@@ -709,11 +709,11 @@ python -m apps.strategy_runner --config ./config/base.yaml
 ---
 
 **Phase 3.8 Acceptance Criteria:**
-- [ ] All 8 tasks completed
-- [ ] `make fmt lint type test` green
-- [ ] Golden tests pass (deterministic signal generation)
-- [ ] Dry-run mode: strategies emit intents but no live orders
-- [ ] Config hot-reload works (manager can reload strategies)
+- [x] All 8 tasks completed
+- [x] `make fmt lint type test` green
+- [x] Golden tests pass (deterministic signal generation)
+- [x] Dry-run mode: strategies emit intents but no live orders
+- [x] Config hot-reload works (manager can reload strategies)
 
 ---
 
