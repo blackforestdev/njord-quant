@@ -128,10 +128,49 @@ class TradeAggregator:
         return bars
 
 
+class MultiTimeframeAggregator:
+    """Aggregates trades into multiple timeframes concurrently."""
+
+    def __init__(self, symbol: str, timeframes: list[str]) -> None:
+        self.symbol = symbol
+        self.timeframes = timeframes
+        self.aggregators = {tf: TradeAggregator(symbol, tf) for tf in timeframes}
+
+        # Track 1m bars for deriving higher timeframes
+        self.minute_bars: list[OHLCVBar] = []
+
+    def add_trade(self, price: float, qty: float, timestamp_ns: int) -> dict[str, OHLCVBar]:
+        """Add trade to all aggregators. Returns dict of completed bars by timeframe."""
+        completed_bars: dict[str, OHLCVBar] = {}
+
+        # Always aggregate from trades for 1m
+        if "1m" in self.aggregators:
+            bar = self.aggregators["1m"].add_trade(price, qty, timestamp_ns)
+            if bar:
+                completed_bars["1m"] = bar
+                self.minute_bars.append(bar)
+
+        # For higher timeframes, derive from 1m bars if available
+        for tf in self.timeframes:
+            if tf == "1m":
+                continue
+
+            # Use trade-based aggregation as fallback
+            bar = self.aggregators[tf].add_trade(price, qty, timestamp_ns)
+            if bar:
+                completed_bars[tf] = bar
+
+        return completed_bars
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OHLCV aggregator service")
     parser.add_argument("--symbol", required=True, help="Trading symbol, e.g. ATOM/USDT")
-    parser.add_argument("--timeframe", default="1m", help="Timeframe (default: 1m)")
+    parser.add_argument(
+        "--timeframes",
+        default="1m",
+        help="Comma-separated timeframes (default: 1m). Example: 1m,5m,15m,1h",
+    )
     parser.add_argument(
         "--config",
         default="./config/base.yaml",
@@ -144,25 +183,27 @@ async def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    # Parse timeframes
+    timeframes = [tf.strip() for tf in args.timeframes.split(",")]
+
     # Load config
     config = load_config(Path(args.config).parent)
 
     # Setup logging
     logger = setup_json_logging(str(config.logging.journal_dir))
-    logger.info("OHLCV aggregator starting", symbol=args.symbol, timeframe=args.timeframe)
+    logger.info("OHLCV aggregator starting", symbol=args.symbol, timeframes=timeframes)
 
     # Initialize bus
     bus = Bus(config.redis.url)
 
     try:
-        # Create aggregator
-        aggregator = TradeAggregator(args.symbol, args.timeframe)
+        # Create multi-timeframe aggregator
+        aggregator = MultiTimeframeAggregator(args.symbol, timeframes)
 
         # Subscribe to trades
         trade_topic = f"md.trades.{args.symbol}"
-        bar_topic = f"md.ohlcv.{args.timeframe}.{args.symbol}"
 
-        logger.info("Subscribing to trades", topic=trade_topic)
+        logger.info("Subscribing to trades", topic=trade_topic, timeframes=timeframes)
 
         async for msg in bus.subscribe(trade_topic):
             # Extract trade data
@@ -173,18 +214,19 @@ async def main() -> None:
             if price is None:
                 continue
 
-            # Add trade to aggregator
-            completed_bar = aggregator.add_trade(price, qty, timestamp_ns)
+            # Add trade to all aggregators
+            completed_bars = aggregator.add_trade(price, qty, timestamp_ns)
 
-            if completed_bar:
-                # Publish completed bar
-                bar_dict = asdict(completed_bar)
+            # Publish completed bars
+            for timeframe, bar in completed_bars.items():
+                bar_topic = f"md.ohlcv.{timeframe}.{args.symbol}"
+                bar_dict = asdict(bar)
                 await bus.publish_json(bar_topic, bar_dict)
                 logger.debug(
                     "Published bar",
                     symbol=args.symbol,
-                    timeframe=args.timeframe,
-                    close=completed_bar.close,
+                    timeframe=timeframe,
+                    close=bar.close,
                 )
 
     except KeyboardInterrupt:
