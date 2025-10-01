@@ -874,8 +874,8 @@ class OHLCVBar:
 
 ---
 
-### Phase 4.7 — Journal Reader API 📋
-**Status:** Planned
+### Phase 4.7 — Journal Reader API ✅
+**Status:** Complete
 **Dependencies:** 4.6
 **Task:** Read OHLCV journals for replay
 **API:**
@@ -903,11 +903,11 @@ class JournalReader:
 - tests/test_journal_reader.py
 
 **Acceptance:**
-- Reads both .ndjson and .ndjson.gz files
-- Time range filtering accurate to nanosecond
-- Malformed lines raise clear errors
-- Iterator pattern works for large files
-- `make fmt lint type test` green
+- [x] Reads both .ndjson and .ndjson.gz files
+- [x] Time range filtering accurate to nanosecond
+- [x] Malformed lines raise clear errors
+- [x] Iterator pattern works for large files
+- [x] `make fmt lint type test` green
 
 ---
 
