@@ -719,14 +719,211 @@ python -m apps.strategy_runner --config ./config/base.yaml
 
 ## Phase 4 — Market Data Storage 📋
 
-### Phase 4.1 — OHLCV Aggregator 📋
-**Task:** Subscribe to trades, compute 1m/5m/1h bars, persist to disk
+### Phase 4.1 — OHLCV Bar Dataclass 📋
+**Status:** Planned
+**Dependencies:** 1.2 (Market Data Ingest)
+**Task:** Define OHLCV bar contract
 
-### Phase 4.2 — Compression & Rotation 📋
-**Task:** Gzip old journals, rotate by date/size
+**API:**
+```python
+@dataclass(frozen=True)
+class OHLCVBar:
+    symbol: str
+    timeframe: str  # "1m", "5m", "1h"
+    ts_open: int    # epoch ns
+    ts_close: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+```
 
-### Phase 4.3 — Replay Interface 📋
-**Task:** API to replay historical data for backtesting
+**Files:**
+- core/contracts.py (append ~30 LOC)
+- tests/test_ohlcv_contract.py
+
+**Acceptance:** Immutable, typed, serializable
+
+---
+
+### Phase 4.2 — Trade-to-OHLCV Aggregator 📋
+**Status:** Planned
+**Dependencies:** 4.1 (OHLCV Bar Dataclass)
+**Task:** Aggregate trades into OHLCV bars
+
+**Behavior:**
+- Subscribe to md.trades.{symbol} topic
+- Buffer trades in memory per timeframe
+- Emit complete bars when time window closes
+- Publish to md.ohlcv.{timeframe}.{symbol} topic
+- Handle gaps (no trades) by repeating last close
+
+**Files:**
+- apps/ohlcv_aggregator/main.py (150 LOC)
+- tests/test_ohlcv_aggregator.py
+
+**Acceptance:** Deterministic bar creation, gap handling verified
+
+---
+
+### Phase 4.3 — Multi-Timeframe Support 📋
+**Status:** Planned
+**Dependencies:** 4.2
+**Task:** Support multiple concurrent timeframes
+
+**Behavior:**
+- Single aggregator instance handles ["1m", "5m", "15m", "1h"]
+- Each timeframe has independent buffer
+- 5m/15m/1h bars derived from 1m (not raw trades)
+- Aligned to wall-clock boundaries (e.g., 1h bar at :00)
+
+**Files:**
+- apps/ohlcv_aggregator/main.py (append ~80 LOC)
+- tests/test_multi_timeframe.py
+
+**Acceptance:** All timeframes align correctly, no drift
+
+---
+
+### Phase 4.4 — OHLCV Persistence 📋
+**Status:** Planned
+**Dependencies:** 4.3
+**Task:** Journal OHLCV bars to disk
+
+**Behavior:**
+- Write bars to var/log/njord/ohlcv.{timeframe}.{symbol}.ndjson
+- One line per bar (JSON serialized)
+- Flush after each bar
+- Separate journal per symbol+timeframe
+
+**Files:**
+- apps/ohlcv_aggregator/main.py (append ~40 LOC)
+- tests/test_ohlcv_persistence.py
+
+**Acceptance:** Journals parseable, replay matches original
+
+---
+
+### Phase 4.5 — Gzip Compression Service 📋
+**Status:** Planned
+**Dependencies:** 4.4
+**Task:** Compress old OHLCV journals
+
+**Behavior:**
+- Scan var/log/njord/ for .ndjson files older than 24h
+- Compress with gzip (level 6)
+- Rename: file.ndjson → file.YYYYMMDD.ndjson.gz
+- Remove original uncompressed file
+- Run as cron job or systemd timer
+
+**Files:**
+- scripts/compress_journals.py (80 LOC)
+- tests/test_compression.py
+
+**Acceptance:** Compressed files readable, original content preserved
+
+---
+
+### Phase 4.6 — Rotation Policy 📋
+**Status:** Planned
+**Dependencies:** 4.5
+**Task:** Rotate journals by date/size
+
+**Behavior:**
+- Daily rotation: start new journal at midnight UTC
+- Size rotation: if journal exceeds 100MB, rotate immediately
+- Naming: ohlcv.1m.ATOMUSDT.20250930.ndjson
+- Compress rotated files automatically
+
+**Files:**
+- apps/ohlcv_aggregator/rotator.py (60 LOC)
+- tests/test_rotation.py
+
+**Acceptance:** Rotation triggers correctly, no data loss
+
+---
+
+### Phase 4.7 — Journal Reader API 📋
+**Status:** Planned
+**Dependencies:** 4.6
+**Task:** Read OHLCV journals for replay
+**API:**
+```python
+class JournalReader:
+    def __init__(self, path: Path): ...
+
+    def read_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: int,  # epoch ns
+        end: int
+    ) -> Iterator[OHLCVBar]: ...
+```
+
+**Behavior:**
+- Handle both compressed (.gz) and uncompressed files
+- Filter by time range
+- Parse NDJSON lines into OHLCVBar objects
+- Raise error on malformed lines
+
+**Files:**
+- core/journal_reader.py (100 LOC)
+- tests/test_journal_reader.py
+
+**Acceptance:** Reads compressed and uncompressed, time filtering works
+
+---
+
+### Phase 4.8 — Event Stream Replay 📋
+**Status:** Planned
+**Dependencies:** 4.7
+**Task:** Replay historical OHLCV bars
+**Behavior:**
+- Load bars from journals
+- Emit to Redis bus at controlled speed
+- Publish to same topics as live aggregator
+- Support speed multiplier (1x, 10x, 100x, max)
+- Replay multiple symbols concurrently
+
+**Files:**
+- apps/replay_engine/main.py (120 LOC)
+- tests/test_replay_engine.py
+
+**Acceptance:** Replay deterministic, speed control verified
+
+---
+
+### Phase 4.9 — Replay CLI 📋
+**Status:** Planned
+**Dependencies:** 4.8
+**Task:** Command-line interface for replay
+
+**CLI:**
+```bash
+python -m apps.replay_engine \
+    --symbol ATOM/USDT \
+    --timeframe 1m \
+    --start 2025-09-01T00:00:00Z \
+    --end 2025-09-30T23:59:59Z \
+    --speed 10x
+```
+
+**Files:**
+- apps/replay_engine/main.py (append ~50 LOC)
+- tests/test_replay_cli.py
+
+**Acceptance:** CLI parses args, replay runs as expected
+
+---
+
+**Phase 4 Acceptance Criteria:**
+- [ ] All 9 tasks completed
+- [ ] make fmt lint type test green
+- [ ] OHLCV bars persist and compress correctly
+- [ ] Replay deterministic across all timeframes
+- [ ] Journals rotate without data loss
 
 ---
 
