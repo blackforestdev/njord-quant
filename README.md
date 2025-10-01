@@ -13,14 +13,16 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - Strategy plugin framework with hot-swappable strategies that emit `OrderIntent` events routed through the risk engine.
 - Risk engine enforcing notional caps, loss limits, rate guards, and kill-switch controls.
 - Paper trading OMS and dry-run live broker adapter to ensure risk-first execution.
-- Deterministic backtesting engine (Phase 5) with replay, fill simulation, and equity curve analysis.
+- Deterministic backtesting engine with replay, fill simulation, golden tests, and report generation.
+- Portfolio allocator (Phase 6) introducing multi-strategy capital management, rebalancing, and portfolio reporting.
 
 ## System Architecture
 - **core/**: Shared primitives such as the Pydantic config loader, structured logging, Redis bus wrapper, contracts, kill switch helpers, and NDJSON journals.
 - **apps/**: Long-running services (`md_ingest`, `risk_engine`, `paper_trader`, `broker_binanceus`) deployed under `systemd`.
 - **strategies/**: Strategy plugin framework with registry/manager, sample strategies, and golden tests for deterministic signal generation.
 - **risk/**: Risk policy modules applied by the risk engine.
-- **backtest/**: Deterministic replay engine, fill simulation, and analytics tooling (Phase 5 workstream).
+- **backtest/**: Deterministic replay engine, fill simulation, analytics tooling, and reporting assets.
+- **portfolio/**: Multi-strategy allocator components (contracts, allocation logic, rebalancer, backtests, reporting).
 - **tests/**: Unit, integration, and golden suites ensuring strict guardrails.
 
 ### Event Flow
@@ -31,25 +33,26 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 
 ## Documentation Map
 - [AGENTS.md](./AGENTS.md): Strategic SOPs, coding standards, and non-negotiable guardrails.
-- [ROADMAP.md](./ROADMAP.md): Phase-by-phase implementation tasks and acceptance criteria (current focus: Phase 5).
+- [ROADMAP.md](./ROADMAP.md): Phase-by-phase implementation tasks and acceptance criteria (current focus: Phase 6).
 - [CLAUDE.md](./CLAUDE.md): Claude Code entry point referencing AGENTS.md.
 - [docs/](./docs): Supplemental design notes and decision records (as available).
 
 ## Current Phase
-**Phase 5 — Backtester**
-- Extends the platform with deterministic backtest contracts, replay engine core, fill simulation, equity curve tracking, and research-grade performance metrics.
-- Builds on completed strategy framework (Phase 3.8) and live broker integration (Phase 3) to support research → paper → backtest parity.
-See [ROADMAP.md#phase-5-—-backtester](./ROADMAP.md#phase-5-—-backtester) for workstream breakdown and acceptance criteria.
+**Phase 6 — Portfolio Allocator**
+- Introduces contracts, allocation calculators, position sizing, rebalancing, and portfolio management services for multi-strategy capital deployment.
+- Builds atop the completed backtesting engine (Phase 5) to support cross-strategy analytics, golden portfolio tests, and portfolio-level reporting.
+See [ROADMAP.md#phase-6-—-portfolio-allocator](./ROADMAP.md#phase-6-—-portfolio-allocator) for task-level details and acceptance criteria.
 
 ## Project Structure
 ```text
 njord_quant/
 ├── apps/               # Service daemons (md_ingest, risk_engine, paper_trader, broker_binanceus)
-├── backtest/           # Backtesting engine components and analytics tooling (Phase 5 in progress)
+├── backtest/           # Backtesting engine components and analytics tooling
 ├── config/             # Environment configuration and encrypted secrets
 ├── core/               # Shared primitives (config, logging, bus, contracts, journals, kill switch)
 ├── risk/               # Risk rule modules
 ├── strategies/         # Strategy plugin framework and samples
+├── portfolio/          # Portfolio allocator contracts, sizing, rebalancing, and reports (Phase 6 in progress)
 ├── tests/              # Unit, integration, and golden suites
 └── var/                # Structured logs and runtime state (append-only NDJSON)
 ```
@@ -91,9 +94,10 @@ njord_quant/
 - **Phase 2 — Risk Engine & Paper OMS:** Risk policies, paper trader, kill-switch integrations ✅
 - **Phase 3 — Live Broker:** Binance.US adapter with dry-run safeguards and kill-switch enforcement ✅
 - **Phase 4 — Market Data Storage:** Persistent OHLCV/tick storage, compression, and replay hooks ✅
-- **Phase 5 — Backtester:** Contracts, engine core, fill simulation, equity curve, metrics, CLI, golden tests, parameter sweeps, and reporting 🚧
-- **Phase 6–16:** Portfolio allocator, research APIs, execution enhancements, telemetry, compliance, deployment, and optimization initiatives 📋
+- **Phase 5 — Backtester:** Contracts, engine core, fill simulation, equity curve, metrics, CLI, golden tests, parameter sweeps, and reporting ✅
+- **Phase 6 — Portfolio Allocator:** Multi-strategy capital allocation, rebalancing, dynamic risk weighting, portfolio backtesting, and reporting 🚧
+- **Phase 7–16:** Research APIs, execution enhancements, telemetry, compliance, deployment, and optimization initiatives 📋
 
 ## Support & Licensing
-- Maintained by **Njord Trust LLC**.
+- Maintained by **Njord Trust**.
 - Proprietary license; consult organizational policies for usage and distribution rights.
