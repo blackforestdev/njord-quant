@@ -42,16 +42,44 @@ def print_next_planned_task(roadmap_text: str) -> None:
     next_indices = [idx for idx in phase_indices if idx > start]
     end = next_indices[0] if next_indices else len(lines)
 
-    section = "\n".join(lines[start:end]).strip()
-    section_lines = section.splitlines()
-    max_lines = 40
+    section = lines[start:end]
 
-    if len(section_lines) > max_lines:
-        preview = "\n".join(section_lines[:max_lines])
+    heading_indices = [idx for idx, line in enumerate(section) if line.startswith("### ")]
+    summary_end = heading_indices[0] if heading_indices else len(section)
+    summary_lines = section[:summary_end]
+
+    incomplete_heading_idx: int | None = None
+    for idx in heading_indices:
+        if "✅" not in section[idx]:
+            incomplete_heading_idx = idx
+            break
+
+    display_lines: list[str] = list(summary_lines)
+
+    if incomplete_heading_idx is not None:
+        next_heading = next(
+            (idx for idx in heading_indices if idx > incomplete_heading_idx), len(section)
+        )
+        display_lines.extend(section[incomplete_heading_idx:next_heading])
+    else:
+        if summary_end < len(section):
+            display_lines.extend(section[summary_end:])
+        display_lines.append("(All tasks in this phase are marked complete.)")
+
+    # Collapse consecutive blank lines for cleaner output
+    cleaned_lines: list[str] = []
+    for line in display_lines:
+        if cleaned_lines and not line.strip() and not cleaned_lines[-1].strip():
+            continue
+        cleaned_lines.append(line)
+
+    max_lines = 40
+    if len(cleaned_lines) > max_lines:
+        preview = "\n".join(cleaned_lines[:max_lines])
         print(preview)
         print("... (see ROADMAP.md for full details)")
     else:
-        print(section)
+        print("\n".join(cleaned_lines).strip())
     print(SEPARATOR)
 
 

@@ -1427,8 +1427,8 @@ class PortfolioSnapshot:
 
 ---
 
-### Phase 6.2 — Allocation Calculator 📋
-**Status:** Planned
+### Phase 6.2 — Allocation Calculator ✅
+**Status:** Complete
 **Dependencies:** 6.1
 **Task:** Calculate target capital allocations per strategy
 
