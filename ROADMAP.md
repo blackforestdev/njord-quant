@@ -743,7 +743,12 @@ class OHLCVBar:
 - core/contracts.py (append ~30 LOC)
 - tests/test_ohlcv_contract.py
 
-**Acceptance:** Immutable, typed, serializable
+**Acceptance:**
+- Immutable dataclass (frozen=True)
+- All fields typed correctly
+- Serializable to/from dict
+- Test verifies immutability
+- `make fmt lint type test` green
 
 ---
 
@@ -763,7 +768,12 @@ class OHLCVBar:
 - apps/ohlcv_aggregator/main.py (150 LOC)
 - tests/test_ohlcv_aggregator.py
 
-**Acceptance:** Deterministic bar creation, gap handling verified
+**Acceptance:**
+- Deterministic bar creation verified
+- Gap handling tested (no trades → repeat close)
+- Edge cases covered (single trade, midnight boundary)
+- Bars published to correct Redis topics
+- `make fmt lint type test` green
 
 ---
 
@@ -782,7 +792,12 @@ class OHLCVBar:
 - apps/ohlcv_aggregator/main.py (append ~80 LOC)
 - tests/test_multi_timeframe.py
 
-**Acceptance:** All timeframes align correctly, no drift
+**Acceptance:**
+- All timeframes align to wall-clock boundaries
+- No drift detected across 24h simulation
+- 5m/15m/1h bars correctly derived from 1m
+- Test includes concurrent multi-timeframe aggregation
+- `make fmt lint type test` green
 
 ---
 
@@ -801,7 +816,12 @@ class OHLCVBar:
 - apps/ohlcv_aggregator/main.py (append ~40 LOC)
 - tests/test_ohlcv_persistence.py
 
-**Acceptance:** Journals parseable, replay matches original
+**Acceptance:**
+- Journals written to correct paths
+- NDJSON format parseable
+- Replay matches original bars exactly
+- Flush after each bar verified
+- `make fmt lint type test` green
 
 ---
 
@@ -821,7 +841,12 @@ class OHLCVBar:
 - scripts/compress_journals.py (80 LOC)
 - tests/test_compression.py
 
-**Acceptance:** Compressed files readable, original content preserved
+**Acceptance:**
+- Compressed files readable with gzip
+- Original content preserved bit-for-bit
+- Files older than 24h correctly identified
+- Compression ratio >50% on test data
+- `make fmt lint type test` green
 
 ---
 
@@ -840,7 +865,12 @@ class OHLCVBar:
 - apps/ohlcv_aggregator/rotator.py (60 LOC)
 - tests/test_rotation.py
 
-**Acceptance:** Rotation triggers correctly, no data loss
+**Acceptance:**
+- Daily rotation triggers at midnight UTC
+- Size rotation triggers at 100MB threshold
+- No data loss during rotation
+- Naming convention followed exactly
+- `make fmt lint type test` green
 
 ---
 
@@ -872,7 +902,12 @@ class JournalReader:
 - core/journal_reader.py (100 LOC)
 - tests/test_journal_reader.py
 
-**Acceptance:** Reads compressed and uncompressed, time filtering works
+**Acceptance:**
+- Reads both .ndjson and .ndjson.gz files
+- Time range filtering accurate to nanosecond
+- Malformed lines raise clear errors
+- Iterator pattern works for large files
+- `make fmt lint type test` green
 
 ---
 
@@ -891,7 +926,12 @@ class JournalReader:
 - apps/replay_engine/main.py (120 LOC)
 - tests/test_replay_engine.py
 
-**Acceptance:** Replay deterministic, speed control verified
+**Acceptance:**
+- Replay produces identical event sequences
+- Speed control verified (1x, 10x, 100x)
+- Multiple symbols replay concurrently without interference
+- Deterministic across multiple runs
+- `make fmt lint type test` green
 
 ---
 
@@ -914,7 +954,12 @@ python -m apps.replay_engine \
 - apps/replay_engine/main.py (append ~50 LOC)
 - tests/test_replay_cli.py
 
-**Acceptance:** CLI parses args, replay runs as expected
+**Acceptance:**
+- All CLI arguments parsed correctly
+- Date/time parsing handles ISO 8601
+- Invalid args produce helpful error messages
+- CLI help text complete and accurate
+- `make fmt lint type test` green
 
 ---
 
