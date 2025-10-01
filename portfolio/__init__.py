@@ -7,6 +7,7 @@ __all__ = [
     "contracts",
     "position_sizer",
     "rebalancer",
+    "report",
     "risk_adjusted",
     "tracker",
 ]
