@@ -717,7 +717,7 @@ python -m apps.strategy_runner --config ./config/base.yaml
 
 ---
 
-## Phase 4 — Market Data Storage 📋
+## Phase 4 — Market Data Storage ✅
 
 ### Phase 4.1 — OHLCV Bar Dataclass ✅
 **Status:** Complete
@@ -974,8 +974,8 @@ python -m apps.replay_engine \
 
 ## Phase 5 — Backtester 📋
 
-### Phase 5.1 — Backtest Contracts 📋
-**Status:** Planned
+### Phase 5.1 — Backtest Contracts ✅
+**Status:** Complete
 **Dependencies:** 4.7 (Journal Reader API)
 **Task:** Define backtest-specific contracts
 
@@ -1013,9 +1013,9 @@ class BacktestResult:
 - `tests/test_backtest_contracts.py`
 
 **Acceptance:**
-- All contracts immutable and typed
-- Equity curve serializable to JSON
-- `make fmt lint type test` green
+- [x] All contracts immutable and typed
+- [x] Equity curve serializable to JSON
+- [x] `make fmt lint type test` green
 
 ---
 
