@@ -86,24 +86,24 @@ status:
 		echo "Error: ROADMAP.md not found"; \
 		exit 1; \
 	fi
-	@echo "📊 Current Phase Status (Phase 3.8):"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@grep -E "^#### Task 3\.8\.[0-9]" ROADMAP.md | head -10 || echo "No tasks found for Phase 3.8"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo ""
-	@echo "Legend: ✅ Complete | 🚧 In Progress | 📋 Planned | ⚠️ Blocked | 🔄 Rework"
-	@echo ""
-	@echo "For full details: make roadmap"
+	@PY_CMD=$$( [ -x "$(PY)" ] && echo "$(PY)" || command -v python3 || command -v python ); \
+	if [ -z "$$PY_CMD" ]; then \
+		echo "Error: Python interpreter not found"; \
+		exit 1; \
+	fi; \
+	$$PY_CMD scripts/show_status.py
 
 next:
 	@if [ ! -f ROADMAP.md ]; then \
 		echo "Error: ROADMAP.md not found"; \
 		exit 1; \
 	fi
-	@echo "🎯 Next Planned Task:"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@grep -A 20 "📋" ROADMAP.md | head -25 || echo "No planned tasks found"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@PY_CMD=$$( [ -x "$(PY)" ] && echo "$(PY)" || command -v python3 || command -v python ); \
+	if [ -z "$$PY_CMD" ]; then \
+		echo "Error: Python interpreter not found"; \
+		exit 1; \
+	fi; \
+	$$PY_CMD scripts/show_next.py
 	@echo ""
 	@echo "To implement: Review task in ROADMAP.md, then run:"
 	@echo "  make fmt && make lint && make type && make test"

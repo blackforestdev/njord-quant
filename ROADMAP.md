@@ -972,7 +972,7 @@ python -m apps.replay_engine \
 
 ---
 
-## Phase 5 — Backtester 📋
+## Phase 5 — Backtester ✅
 
 ### Phase 5.1 — Backtest Contracts ✅
 **Status:** Complete
