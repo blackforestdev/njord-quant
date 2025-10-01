@@ -16,6 +16,7 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - Deterministic backtesting engine with replay, fill simulation, golden tests, and report generation.
 - Portfolio allocator (Phase 6) introducing multi-strategy capital management, rebalancing, and portfolio reporting.
 - Risk-adjusted allocator (Phase 6.7) that modulates capital based on strategy performance metrics.
+- Portfolio backtest engine (Phase 6.8) aggregating strategy runs into portfolio-level equity and metrics.
 
 ## System Architecture
 - **core/**: Shared primitives such as the Pydantic config loader, structured logging, Redis bus wrapper, contracts, kill switch helpers, and NDJSON journals.

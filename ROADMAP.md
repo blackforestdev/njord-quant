@@ -1729,8 +1729,8 @@ class RiskAdjustedAllocator:
 
 ---
 
-### Phase 6.8 — Portfolio Backtest Integration 📋
-**Status:** Planned
+### Phase 6.8 — Portfolio Backtest Integration ✅
+**Status:** Complete
 **Dependencies:** 6.7, 5.6 (Backtest Runner)
 **Task:** Run backtests with portfolio allocation
 

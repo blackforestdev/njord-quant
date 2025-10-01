@@ -125,7 +125,7 @@ class PortfolioTracker:
             return cash_total + market_value
 
     def get_snapshot(self) -> PortfolioSnapshot:
-        """Build a portfolio snapshot representing the current state."""
+        """Build a portfolio snapshot with latest mark-to-market details."""
 
         with self._lock:
             ts_ns = self._clock()
@@ -139,9 +139,7 @@ class PortfolioTracker:
                         continue
 
                     market_value = state.qty * state.last_price
-                    allocated_capital = strategy_cash + market_value
                     unrealized = (state.last_price - state.avg_price) * state.qty
-
                     positions.append(
                         StrategyPosition(
                             strategy_id=strategy_id,
@@ -150,7 +148,7 @@ class PortfolioTracker:
                             avg_entry_price=state.avg_price,
                             current_price=state.last_price,
                             unrealized_pnl=unrealized,
-                            allocated_capital=allocated_capital,
+                            allocated_capital=strategy_cash + market_value,
                         )
                     )
 
