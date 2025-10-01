@@ -10,6 +10,15 @@ dependencies = [
     "redis>=5.0",
 ]
 
+[project.optional-dependencies]
+research = [
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "matplotlib>=3.7",
+    "jupyter>=1.0",
+    "notebook>=7.0",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

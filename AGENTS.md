@@ -114,7 +114,8 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - 3.6–3.7: Kill-switch enforcement (file + Redis)
 - **3.8: Strategy Plugin Framework** ← **CURRENT PHASE**
 
-### **Phase 3.8** — Strategy Plugin Framework (IN PROGRESS)
+### **Phase 3.8** — Strategy Plugin Framework ✅
+**Status:** Complete
 **Task:** Implement hot-swappable strategy system with context injection and order intent generation.
 
 **Requirements:**
@@ -158,14 +159,15 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Golden equity curve validation
 - Parameter sweep harness
 
-### **Phase 6** — Portfolio Allocator
+### **Phase 6** — Portfolio Allocator ✅
 - Multi-strategy capital allocation
 - Risk-weighted rebalancing
 - Kill-switch integration
 
-### **Phase 7** — Research API
+### **Phase 7** — Research API (IN PROGRESS)
 - Pandas/PyArrow data interface
 - Jupyter notebook integration (offline only)
+- **Dependencies:** pandas, pyarrow, matplotlib, jupyter (optional install group)
 
 ### **Phase 8** — Execution Layer
 - Smart order router (TWAP, VWAP, iceberg)
@@ -234,7 +236,8 @@ Use this template when prompting agents for specific tasks:
 - …
 
 **Constraints:**
-- No new dependencies
+- No new **runtime** dependencies (Phases 0-6, 8-16)
+  - **Exception:** Phase 7 (Research API) may add pandas, pyarrow, matplotlib, jupyter (optional group)
 - No network I/O in tests
 - Must stay deterministic
 - Keep diffs minimal (≤150 LOC, ≤4 files)

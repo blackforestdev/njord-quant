@@ -17,6 +17,7 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - Portfolio allocator (Phase 6) introducing multi-strategy capital management, rebalancing, and portfolio reporting.
 - Risk-adjusted allocator (Phase 6.7) that modulates capital based on strategy performance metrics.
 - Portfolio backtest engine (Phase 6.8) aggregating strategy runs into portfolio-level equity and metrics.
+- Research data reader (Phase 7.1) providing pandas/PyArrow access to journaled OHLCV, trades, fills, and positions.
 - Portfolio report generator (Phase 6.9) producing interactive HTML summaries with allocations and rebalances.
 
 ## System Architecture
@@ -56,6 +57,7 @@ njord_quant/
 ├── risk/               # Risk rule modules
 ├── strategies/         # Strategy plugin framework and samples
 ├── portfolio/          # Portfolio allocator, risk adjustment, reporting, and manager integration
+├── research/           # Data reader, aggregation, and research tooling (Phase 7)
 ├── tests/              # Unit, integration, and golden suites
 └── var/                # Structured logs and runtime state (append-only NDJSON)
 ```
