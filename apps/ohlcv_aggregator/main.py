@@ -6,6 +6,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from apps.ohlcv_aggregator.rotator import JournalRotator
 from core.bus import Bus
 from core.config import load_config
 from core.contracts import OHLCVBar
@@ -143,6 +144,7 @@ class MultiTimeframeAggregator:
         # Setup journaling
         self.journal_dir = Path(journal_dir) if journal_dir else None
         self.journal_files: dict[str, Path] = {}
+        self.rotators: dict[str, JournalRotator] = {}
         if self.journal_dir:
             self.journal_dir.mkdir(parents=True, exist_ok=True)
             for tf in timeframes:
@@ -150,6 +152,7 @@ class MultiTimeframeAggregator:
                 safe_symbol = symbol.replace("/", "")
                 journal_path = self.journal_dir / f"ohlcv.{tf}.{safe_symbol}.ndjson"
                 self.journal_files[tf] = journal_path
+                self.rotators[tf] = JournalRotator(journal_path)
 
     def add_trade(self, price: float, qty: float, timestamp_ns: int) -> dict[str, OHLCVBar]:
         """Add trade to all aggregators. Returns dict of completed bars by timeframe."""
@@ -180,6 +183,12 @@ class MultiTimeframeAggregator:
         """Write bar to journal file."""
         if timeframe not in self.journal_files:
             return
+
+        # Check if rotation is needed
+        if timeframe in self.rotators:
+            rotator = self.rotators[timeframe]
+            if rotator.should_rotate():
+                rotator.rotate(compress=True)
 
         journal_path = self.journal_files[timeframe]
         bar_dict = asdict(bar)

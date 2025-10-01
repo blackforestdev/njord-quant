@@ -850,8 +850,8 @@ class OHLCVBar:
 
 ---
 
-### Phase 4.6 — Rotation Policy 📋
-**Status:** Planned
+### Phase 4.6 — Rotation Policy ✅
+**Status:** Complete
 **Dependencies:** 4.5
 **Task:** Rotate journals by date/size
 
@@ -866,11 +866,11 @@ class OHLCVBar:
 - tests/test_rotation.py
 
 **Acceptance:**
-- Daily rotation triggers at midnight UTC
-- Size rotation triggers at 100MB threshold
-- No data loss during rotation
-- Naming convention followed exactly
-- `make fmt lint type test` green
+- [x] Daily rotation triggers at midnight UTC
+- [x] Size rotation triggers at 100MB threshold
+- [x] No data loss during rotation
+- [x] Naming convention followed exactly
+- [x] `make fmt lint type test` green
 
 ---
 
