@@ -1019,8 +1019,8 @@ class BacktestResult:
 
 ---
 
-### Phase 5.2 — Backtest Engine Core 📋
-**Status:** Planned
+### Phase 5.2 — Backtest Engine Core ✅
+**Status:** Complete
 **Dependencies:** 5.1
 **Task:** Implement deterministic event replay engine
 
@@ -1039,11 +1039,11 @@ class BacktestResult:
 - `tests/test_backtest_engine.py`
 
 **Acceptance:**
-- Deterministic: same input → same output
-- Replay handles multi-day periods
-- Position tracking accurate
-- Test includes buy-hold baseline
-- `make fmt lint type test` green
+- [x] Deterministic: same input → same output
+- [x] Replay handles multi-day periods
+- [x] Position tracking accurate
+- [x] Test includes buy-hold baseline
+- [x] `make fmt lint type test` green
 
 ---
 
