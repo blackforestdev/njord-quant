@@ -1488,8 +1488,8 @@ class AllocationCalculator:
 
 ---
 
-### Phase 6.3 — Position Sizer 📋
-**Status:** Planned
+### Phase 6.3 — Position Sizer ✅
+**Status:** Complete
 **Dependencies:** 6.2
 **Task:** Convert capital allocations to position sizes
 
@@ -1541,8 +1541,8 @@ class PositionSizer:
 
 ---
 
-### Phase 6.4 — Rebalancer 📋
-**Status:** Planned
+### Phase 6.4 — Rebalancer ✅
+**Status:** Complete
 **Dependencies:** 6.3
 **Task:** Generate rebalancing trades to achieve target allocations
 

@@ -16,6 +16,7 @@ class StrategyAllocation:
         target_weight: Target weight (0.0 to 1.0)
         min_weight: Minimum allowed weight (default: 0.0)
         max_weight: Maximum allowed weight (default: 1.0)
+        risk_multiplier: Multiplier applied to position sizes (default: 1.0)
         enabled: Whether strategy is active (default: True)
     """
 
@@ -23,6 +24,7 @@ class StrategyAllocation:
     target_weight: float
     min_weight: float = 0.0
     max_weight: float = 1.0
+    risk_multiplier: float = 1.0
     enabled: bool = True
 
     def __post_init__(self) -> None:
@@ -41,6 +43,8 @@ class StrategyAllocation:
             raise ValueError(
                 f"target_weight ({self.target_weight}) must be <= max_weight ({self.max_weight})"
             )
+        if self.risk_multiplier < 0.0:
+            raise ValueError(f"risk_multiplier must be non-negative, got {self.risk_multiplier}")
 
 
 @dataclass(frozen=True)
