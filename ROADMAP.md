@@ -1184,8 +1184,8 @@ Equity curve saved to: var/backtest/equity_trendline_break_v1_ATOMUSDT.ndjson
 
 ---
 
-### Phase 5.7 — Golden Backtest Tests 📋
-**Status:** Planned
+### Phase 5.7 — Golden Backtest Tests ✅
+**Status:** Complete
 **Dependencies:** 5.6
 **Task:** Snapshot-test known backtest results
 

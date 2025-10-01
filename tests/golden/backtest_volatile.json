@@ -1,0 +1,43 @@
+{
+  "description": "Volatile strategy with multiple trades and drawdowns",
+  "config": {
+    "symbol": "ATOM/USDT",
+    "strategy_id": "volatile",
+    "initial_capital": 10000.0,
+    "commission_rate": 0.001,
+    "slippage_bps": 5.0
+  },
+  "expected_metrics": {
+    "total_return_pct": 18.107565414105803,
+    "sharpe_ratio": 18.418934206113413,
+    "max_drawdown_pct": 0.09640961574644999,
+    "max_drawdown_duration_days": 1.0,
+    "volatility_annual_pct": 56.57960808650231,
+    "calmar_ratio": 187.81908084487478,
+    "win_rate": 1.0,
+    "profit_factor": 0.0,
+    "avg_win": 620.6666666666666,
+    "avg_loss": 0.0,
+    "largest_win": 686.0,
+    "largest_loss": 0.0,
+    "num_trades": 6
+  },
+  "bars": [
+    {"ts_open": 0, "open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "volume": 1000.0},
+    {"ts_open": 86400000000000, "open": 100.0, "high": 105.0, "low": 99.0, "close": 105.0, "volume": 1000.0},
+    {"ts_open": 172800000000000, "open": 105.0, "high": 107.0, "low": 103.0, "close": 103.0, "volume": 1000.0},
+    {"ts_open": 259200000000000, "open": 103.0, "high": 110.0, "low": 102.0, "close": 110.0, "volume": 1000.0},
+    {"ts_open": 345600000000000, "open": 110.0, "high": 112.0, "low": 108.0, "close": 108.0, "volume": 1000.0},
+    {"ts_open": 432000000000000, "open": 108.0, "high": 115.0, "low": 107.0, "close": 115.0, "volume": 1000.0},
+    {"ts_open": 518400000000000, "open": 115.0, "high": 117.0, "low": 113.0, "close": 113.0, "volume": 1000.0},
+    {"ts_open": 604800000000000, "open": 113.0, "high": 116.0, "low": 112.0, "close": 115.0, "volume": 1000.0}
+  ],
+  "trades": [
+    {"side": "buy", "bar_index": 0},
+    {"side": "sell", "bar_index": 1},
+    {"side": "buy", "bar_index": 2},
+    {"side": "sell", "bar_index": 3},
+    {"side": "buy", "bar_index": 4},
+    {"side": "sell", "bar_index": 5}
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "description": "Buy and hold strategy - buy at start, hold until end",
+  "config": {
+    "symbol": "ATOM/USDT",
+    "strategy_id": "buy_hold",
+    "initial_capital": 10000.0,
+    "commission_rate": 0.001,
+    "slippage_bps": 5.0
+  },
+  "expected_metrics": {
+    "total_return_pct": 17.65730415807491,
+    "sharpe_ratio": 405.7057901029823,
+    "max_drawdown_pct": 0.0,
+    "max_drawdown_duration_days": 0.0,
+    "volatility_annual_pct": 1.6402632158351897,
+    "calmar_ratio": 0.0,
+    "win_rate": 0.0,
+    "profit_factor": 0.0,
+    "avg_win": 0.0,
+    "avg_loss": 0.0,
+    "largest_win": 0.0,
+    "largest_loss": 0.0,
+    "num_trades": 1
+  },
+  "bars": [
+    {"ts_open": 0, "open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "volume": 1000.0},
+    {"ts_open": 86400000000000, "open": 100.0, "high": 102.0, "low": 98.0, "close": 102.0, "volume": 1000.0},
+    {"ts_open": 172800000000000, "open": 102.0, "high": 104.0, "low": 100.0, "close": 104.0, "volume": 1000.0},
+    {"ts_open": 259200000000000, "open": 104.0, "high": 106.0, "low": 102.0, "close": 106.0, "volume": 1000.0},
+    {"ts_open": 345600000000000, "open": 106.0, "high": 108.0, "low": 104.0, "close": 108.0, "volume": 1000.0},
+    {"ts_open": 432000000000000, "open": 108.0, "high": 110.0, "low": 106.0, "close": 110.0, "volume": 1000.0},
+    {"ts_open": 518400000000000, "open": 110.0, "high": 112.0, "low": 108.0, "close": 112.0, "volume": 1000.0},
+    {"ts_open": 604800000000000, "open": 112.0, "high": 114.0, "low": 110.0, "close": 114.0, "volume": 1000.0},
+    {"ts_open": 691200000000000, "open": 114.0, "high": 116.0, "low": 112.0, "close": 116.0, "volume": 1000.0},
+    {"ts_open": 777600000000000, "open": 116.0, "high": 118.0, "low": 114.0, "close": 118.0, "volume": 1000.0},
+    {"ts_open": 864000000000000, "open": 118.0, "high": 122.0, "low": 116.0, "close": 120.0, "volume": 1000.0}
+  ],
+  "trades": [
+    {"side": "buy", "bar_index": 0},
+    {"side": "sell", "bar_index": 10}
+  ]
+}

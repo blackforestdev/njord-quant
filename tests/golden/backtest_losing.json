@@ -1,0 +1,38 @@
+{
+  "description": "Losing strategy with negative returns",
+  "config": {
+    "symbol": "ATOM/USDT",
+    "strategy_id": "losing",
+    "initial_capital": 10000.0,
+    "commission_rate": 0.001,
+    "slippage_bps": 5.0
+  },
+  "expected_metrics": {
+    "total_return_pct": -9.098416448119146,
+    "sharpe_ratio": -27.56985823722046,
+    "max_drawdown_pct": 9.098416448119146,
+    "max_drawdown_duration_days": 3.0,
+    "volatility_annual_pct": 41.12129737525323,
+    "calmar_ratio": -1.0,
+    "win_rate": 0.0,
+    "profit_factor": 0.0,
+    "avg_win": 0.0,
+    "avg_loss": -441.0,
+    "largest_win": 0.0,
+    "largest_loss": -490.0,
+    "num_trades": 4
+  },
+  "bars": [
+    {"ts_open": 0, "open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "volume": 1000.0},
+    {"ts_open": 86400000000000, "open": 100.0, "high": 101.0, "low": 95.0, "close": 95.0, "volume": 1000.0},
+    {"ts_open": 172800000000000, "open": 95.0, "high": 96.0, "low": 92.0, "close": 92.0, "volume": 1000.0},
+    {"ts_open": 259200000000000, "open": 92.0, "high": 93.0, "low": 88.0, "close": 88.0, "volume": 1000.0},
+    {"ts_open": 345600000000000, "open": 88.0, "high": 92.0, "low": 87.0, "close": 90.0, "volume": 1000.0}
+  ],
+  "trades": [
+    {"side": "buy", "bar_index": 0},
+    {"side": "sell", "bar_index": 1},
+    {"side": "buy", "bar_index": 2},
+    {"side": "sell", "bar_index": 3}
+  ]
+}
