@@ -911,8 +911,8 @@ class JournalReader:
 
 ---
 
-### Phase 4.8 — Event Stream Replay 📋
-**Status:** Planned
+### Phase 4.8 — Event Stream Replay ✅
+**Status:** Complete
 **Dependencies:** 4.7
 **Task:** Replay historical OHLCV bars
 **Behavior:**
@@ -927,11 +927,11 @@ class JournalReader:
 - tests/test_replay_engine.py
 
 **Acceptance:**
-- Replay produces identical event sequences
-- Speed control verified (1x, 10x, 100x)
-- Multiple symbols replay concurrently without interference
-- Deterministic across multiple runs
-- `make fmt lint type test` green
+- [x] Replay produces identical event sequences
+- [x] Speed control verified (1x, 10x, 100x)
+- [x] Multiple symbols replay concurrently without interference
+- [x] Deterministic across multiple runs
+- [x] `make fmt lint type test` green
 
 ---
 
