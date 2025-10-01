@@ -99,7 +99,12 @@ class PerformanceAnalyzer:
             if eq > running_max:
                 # End of drawdown
                 if dd_start_idx is not None:
-                    depth = (running_max - float(equity[dd_start_idx:i].min())) / running_max * 100
+                    # Convert to ndarray and use numpy min() to avoid type issues
+                    import numpy as np
+
+                    dd_slice = np.asarray(equity[dd_start_idx:i])
+                    min_value = float(np.min(dd_slice)) if len(dd_slice) > 0 else running_max
+                    depth = (running_max - min_value) / running_max * 100
                     drawdowns.append(
                         {
                             "start": timestamps.iloc[dd_start_idx],
@@ -122,7 +127,11 @@ class PerformanceAnalyzer:
 
         # Handle open drawdown
         if dd_start_idx is not None:
-            depth = (running_max - float(equity[dd_start_idx:].min())) / running_max * 100
+            import numpy as np
+
+            dd_slice = np.asarray(equity[dd_start_idx:])
+            min_value = float(np.min(dd_slice)) if len(dd_slice) > 0 else running_max
+            depth = (running_max - min_value) / running_max * 100
             drawdowns.append(
                 {
                     "start": timestamps.iloc[dd_start_idx],
@@ -299,15 +308,39 @@ class PerformanceAnalyzer:
         strat_ret = strategy_returns.iloc[:min_len]
         bench_ret = benchmark_returns.iloc[:min_len]
 
-        correlation = float(strat_ret.corr(bench_ret))
+        # Calculate correlation coefficient
+        corr_result = strat_ret.corr(bench_ret)
+        correlation = float(corr_result) if pd.notna(corr_result) else 0.0
 
         # Beta = Cov(strategy, benchmark) / Var(benchmark)
-        covariance = float(strat_ret.cov(bench_ret))
-        benchmark_variance = float(bench_ret.var())
+        cov_result = strat_ret.cov(bench_ret)
+        covariance = float(cov_result) if pd.notna(cov_result) else 0.0
+
+        var_result = bench_ret.var()
+        # Handle scalar conversion properly
+        if pd.notna(var_result):
+            if hasattr(var_result, "item"):
+                # numpy scalar - use item() to get Python native type
+                item_val = var_result.item()
+                benchmark_variance = float(item_val) if isinstance(item_val, (int, float)) else 0.0
+            elif isinstance(var_result, (int, float)):
+                benchmark_variance = float(var_result)
+            else:
+                # Fallback for other numeric types
+                benchmark_variance = 0.0
+        else:
+            benchmark_variance = 0.0
+
         beta = covariance / benchmark_variance if benchmark_variance > 0 else 0.0
 
         # Alpha = Avg(strategy_return) - Beta * Avg(benchmark_return)
-        alpha = float(strat_ret.mean() - beta * bench_ret.mean())
+        strat_mean = strat_ret.mean()
+        bench_mean = bench_ret.mean()
+        alpha = (
+            float(strat_mean - beta * bench_mean)
+            if pd.notna(strat_mean) and pd.notna(bench_mean)
+            else 0.0
+        )
 
         return {
             "correlation": correlation,
