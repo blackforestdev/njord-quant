@@ -801,8 +801,8 @@ class OHLCVBar:
 
 ---
 
-### Phase 4.4 — OHLCV Persistence 📋
-**Status:** Planned
+### Phase 4.4 — OHLCV Persistence ✅
+**Status:** Complete
 **Dependencies:** 4.3
 **Task:** Journal OHLCV bars to disk
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from dataclasses import asdict
 from pathlib import Path
 
@@ -131,13 +132,24 @@ class TradeAggregator:
 class MultiTimeframeAggregator:
     """Aggregates trades into multiple timeframes concurrently."""
 
-    def __init__(self, symbol: str, timeframes: list[str]) -> None:
+    def __init__(self, symbol: str, timeframes: list[str], journal_dir: str | None = None) -> None:
         self.symbol = symbol
         self.timeframes = timeframes
         self.aggregators = {tf: TradeAggregator(symbol, tf) for tf in timeframes}
 
         # Track 1m bars for deriving higher timeframes
         self.minute_bars: list[OHLCVBar] = []
+
+        # Setup journaling
+        self.journal_dir = Path(journal_dir) if journal_dir else None
+        self.journal_files: dict[str, Path] = {}
+        if self.journal_dir:
+            self.journal_dir.mkdir(parents=True, exist_ok=True)
+            for tf in timeframes:
+                # Create journal path: ohlcv.{timeframe}.{symbol}.ndjson
+                safe_symbol = symbol.replace("/", "")
+                journal_path = self.journal_dir / f"ohlcv.{tf}.{safe_symbol}.ndjson"
+                self.journal_files[tf] = journal_path
 
     def add_trade(self, price: float, qty: float, timestamp_ns: int) -> dict[str, OHLCVBar]:
         """Add trade to all aggregators. Returns dict of completed bars by timeframe."""
@@ -149,6 +161,7 @@ class MultiTimeframeAggregator:
             if bar:
                 completed_bars["1m"] = bar
                 self.minute_bars.append(bar)
+                self._journal_bar("1m", bar)
 
         # For higher timeframes, derive from 1m bars if available
         for tf in self.timeframes:
@@ -159,8 +172,23 @@ class MultiTimeframeAggregator:
             bar = self.aggregators[tf].add_trade(price, qty, timestamp_ns)
             if bar:
                 completed_bars[tf] = bar
+                self._journal_bar(tf, bar)
 
         return completed_bars
+
+    def _journal_bar(self, timeframe: str, bar: OHLCVBar) -> None:
+        """Write bar to journal file."""
+        if timeframe not in self.journal_files:
+            return
+
+        journal_path = self.journal_files[timeframe]
+        bar_dict = asdict(bar)
+        bar_json = json.dumps(bar_dict, separators=(",", ":"))
+
+        # Append to journal and flush
+        with open(journal_path, "a") as f:
+            f.write(bar_json + "\n")
+            f.flush()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -197,8 +225,9 @@ async def main() -> None:
     bus = Bus(config.redis.url)
 
     try:
-        # Create multi-timeframe aggregator
-        aggregator = MultiTimeframeAggregator(args.symbol, timeframes)
+        # Create multi-timeframe aggregator with journaling
+        journal_dir = str(config.logging.journal_dir)
+        aggregator = MultiTimeframeAggregator(args.symbol, timeframes, journal_dir)
 
         # Subscribe to trades
         trade_topic = f"md.trades.{args.symbol}"
