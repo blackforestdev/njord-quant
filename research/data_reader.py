@@ -17,18 +17,10 @@ class DataReaderError(RuntimeError):
 class DataReader:
     """Read market data, fills, and positions from local journals."""
 
-    def __init__(
-        self,
-        journal_dir: Path | str,
-        *,
-        converters: Mapping[str, Callable[[list[dict[str, object]]], object]] | None = None,
-    ) -> None:
+    def __init__(self, journal_dir: Path | str) -> None:
         self._root = Path(journal_dir)
         if not self._root.exists():
             raise DataReaderError(f"Journal directory does not exist: {self._root}")
-        self._converters: dict[str, Callable[[list[dict[str, object]]], object]] = dict(
-            converters or {}
-        )
 
     def read_ohlcv(
         self,
@@ -158,8 +150,6 @@ class DataReader:
         records: list[dict[str, object]],
         fmt: Literal["pandas", "arrow"],
     ) -> Any:
-        if fmt in self._converters:
-            return self._converters[fmt](records)
         if fmt == "pandas":
             pd = _import_optional("pandas", "pandas is required for format='pandas'")
             return pd.DataFrame(records)

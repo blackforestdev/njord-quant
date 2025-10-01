@@ -11,39 +11,6 @@ import pytest
 from research.data_reader import DataReader, DataReaderError
 
 
-class StubDataFrame:
-    def __init__(self, rows: list[dict[str, object]]) -> None:
-        self._rows = rows
-        self.iloc = _ILoc(rows)
-
-    def __len__(self) -> int:
-        return len(self._rows)
-
-    @property
-    def empty(self) -> bool:
-        return not self._rows
-
-    def __getitem__(self, key: str) -> list[object]:
-        return [row.get(key) for row in self._rows]
-
-
-class _ILoc:
-    def __init__(self, rows: list[dict[str, object]]) -> None:
-        self._rows = rows
-
-    def __getitem__(self, index: int) -> dict[str, object]:
-        return self._rows[index]
-
-
-class StubArrowTable:
-    def __init__(self, rows: list[dict[str, object]]) -> None:
-        self._rows = rows
-        self.num_rows = len(rows)
-
-    def column(self, name: str) -> list[object]:
-        return [row.get(name) for row in self._rows]
-
-
 def _write_ndjson(path: Path, records: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -59,6 +26,8 @@ def _write_ndjson_gz(path: Path, records: list[dict[str, object]]) -> None:
 
 
 def test_read_ohlcv_pandas(tmp_path: Path) -> None:
+    pd = pytest.importorskip("pandas")
+
     journal_dir = tmp_path / "journals"
     _write_ndjson(
         journal_dir / "ohlcv.1m.ATOMUSDT.20250101.ndjson",
@@ -104,11 +73,7 @@ def test_read_ohlcv_pandas(tmp_path: Path) -> None:
         ],
     )
 
-    converters = {
-        "pandas": StubDataFrame,
-        "arrow": StubArrowTable,
-    }
-    reader = DataReader(journal_dir, converters=converters)
+    reader = DataReader(journal_dir)
     df = reader.read_ohlcv(
         symbol="ATOM/USDT",
         timeframe="1m",
@@ -117,13 +82,14 @@ def test_read_ohlcv_pandas(tmp_path: Path) -> None:
         format="pandas",
     )
 
-    assert isinstance(df, StubDataFrame)
+    assert isinstance(df, pd.DataFrame)
     assert len(df) == 3
-    first_row = df.iloc[0]
-    assert first_row["open"] == 10.0
+    assert float(df.iloc[0]["open"]) == 10.0
 
 
 def test_read_trades_arrow(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+
     journal_dir = tmp_path / "journals"
     _write_ndjson(
         journal_dir / "md.trades.ATOMUSDT.ndjson",
@@ -145,11 +111,7 @@ def test_read_trades_arrow(tmp_path: Path) -> None:
         ],
     )
 
-    converters = {
-        "pandas": StubDataFrame,
-        "arrow": StubArrowTable,
-    }
-    reader = DataReader(journal_dir, converters=converters)
+    reader = DataReader(journal_dir)
     table = reader.read_trades(
         symbol="ATOM/USDT",
         start_ts=0,
@@ -157,12 +119,13 @@ def test_read_trades_arrow(tmp_path: Path) -> None:
         format="arrow",
     )
 
-    assert isinstance(table, StubArrowTable)
+    assert isinstance(table, pa.Table)
     assert table.num_rows == 2
-    assert table.column("timestamp_ns")[0] == 1_000_000_000
+    assert table.column("timestamp_ns")[0].as_py() == 1_000_000_000
 
 
 def test_read_fills_filters_strategy(tmp_path: Path) -> None:
+    pd = pytest.importorskip("pandas")
     journal_dir = tmp_path / "journals"
     _write_ndjson(
         journal_dir / "fills.ndjson",
@@ -188,11 +151,7 @@ def test_read_fills_filters_strategy(tmp_path: Path) -> None:
         ],
     )
 
-    converters = {
-        "pandas": StubDataFrame,
-        "arrow": StubArrowTable,
-    }
-    reader = DataReader(journal_dir, converters=converters)
+    reader = DataReader(journal_dir)
     df = reader.read_fills(
         strategy_id="alpha",
         start_ts=0,
@@ -200,24 +159,21 @@ def test_read_fills_filters_strategy(tmp_path: Path) -> None:
         format="pandas",
     )
 
-    assert isinstance(df, StubDataFrame)
+    assert isinstance(df, pd.DataFrame)
     assert len(df) == 1
     assert df.iloc[0]["order_id"] == "1"
 
 
 def test_read_positions_returns_empty_when_missing(tmp_path: Path) -> None:
-    converters = {
-        "pandas": StubDataFrame,
-        "arrow": StubArrowTable,
-    }
-    reader = DataReader(tmp_path, converters=converters)
+    pd = pytest.importorskip("pandas")
+    reader = DataReader(tmp_path)
     df = reader.read_positions(
         portfolio_id="missing",
         start_ts=0,
         end_ts=10,
         format="pandas",
     )
-    assert isinstance(df, StubDataFrame)
+    assert isinstance(df, pd.DataFrame)
     assert df.empty
 
 
