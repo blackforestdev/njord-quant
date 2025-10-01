@@ -37,3 +37,15 @@ risk:
 paths:
   journal_dir: ./data/journal
   experiments_dir: ./experiments
+
+portfolio:
+  portfolio_id: default_portfolio
+  total_capital: 100000.0
+  rebalance_threshold_pct: 5.0
+  min_rebalance_interval_sec: 3600
+  allow_fractional: true
+  allocations:
+    - strategy_id: trendline_break_v1
+      target_weight: 0.6
+    - strategy_id: rsi_tema_bb_v1
+      target_weight: 0.4

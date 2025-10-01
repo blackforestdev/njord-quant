@@ -76,10 +76,12 @@ njord_quant/
 - `apps/risk_engine`: Validates `OrderIntent` events against policy modules and kill-switch state.
 - `apps/paper_trader`: Simulated fills, position tracking, and PnL calculations for dry-run environments.
 - `apps/broker_binanceus`: Live adapter enforcing dry-run defaults, notional caps, and kill-switch compliance.
+- `apps/portfolio_manager`: Coordinates strategy fills, rebalancing, and publishes portfolio snapshots.
 
 ## Configuration & Secrets
 - `config/base.yaml`: Core application settings (environment, Redis endpoints, logging directories).
 - `config/strategies.yaml`: Strategy registry and parameterization for the plugin framework.
+- `config/portfolio.yaml`: Example portfolio configuration consumed by the portfolio manager service.
 - `config/secrets.enc.yaml`: SOPS-encrypted secrets; never commit decrypted values.
 - Live trading requires explicit flags: `app.env=live` and `NJORD_ENABLE_LIVE=1`.
 

@@ -99,6 +99,13 @@ class PortfolioTracker:
 
         with self._lock:
             self._last_rebalance_ts = ts_ns
+            self._last_update_ts = max(self._last_update_ts, ts_ns)
+
+    def get_last_rebalance_ts(self) -> int:
+        """Return timestamp (ns) of last recorded rebalance."""
+
+        with self._lock:
+            return self._last_rebalance_ts
 
     def get_strategy_capital(self, strategy_id: str) -> float:
         """Return current capital (cash + market value) for a strategy."""

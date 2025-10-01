@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast, get_args, get_origin, get_type_hints
 
+from portfolio.contracts import PortfolioConfig
+
 if TYPE_CHECKING:
 
     class BaseModel:  # pragma: no cover - typing helper only
@@ -203,6 +205,7 @@ class Config(BaseModel):
     risk: RiskCfg
     paths: PathsCfg
     secrets: SecretsCfg = Field(default_factory=SecretsCfg)
+    portfolio: PortfolioConfig | None = None
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
