@@ -53,6 +53,9 @@
 | 11 | Monitoring & Alerts | 📋 | 10 | [phase-11-monitoring.md](roadmap/phases/phase-11-monitoring.md) |
 | 12 | Compliance & Audit | 📋 | 9 | [phase-12-compliance.md](roadmap/phases/phase-12-compliance.md) |
 | 13 | Advanced Strategy Toolkit | 📋 | 10 | [phase-13-strategies.md](roadmap/phases/phase-13-strategies.md) |
+| 14 | Simulation Harness | 📋 | 7 | [phase-14-simulation.md](roadmap/phases/phase-14-simulation.md) |
+| 15 | Deployment Framework | 📋 | 7 | [phase-15-deployment.md](roadmap/phases/phase-15-deployment.md) |
+| 16 | Optimization Pass | 📋 | 7 | [phase-16-optimization.md](roadmap/phases/phase-16-optimization.md) |
 
 ---
 
@@ -73,6 +76,9 @@ Phase 0 (Bootstrap) ✅
                                                                                     └─> Phase 11 (Monitoring) 📋
                                                                                             └─> Phase 12 (Compliance) 📋
                                                                                                     └─> Phase 13 (Strategies) 📋
+                                                                                                            └─> Phase 14 (Simulation) 📋
+                                                                                                                    └─> Phase 15 (Deployment) 📋
+                                                                                                                            └─> Phase 16 (Optimization) 📋
 ```
 
 ---
