@@ -1,13 +1,13 @@
 # Njord Quant Development Roadmap
 
-**Current Phase:** 13 — Advanced Strategy Toolkit 📋
+**Current Phase:** 8 — Execution Layer 📋
 **Last Updated:** 2025-10-02
 
 ## Quick Navigation
 
 - [How to Use This Roadmap](#how-to-use-this-roadmap)
 - [Phase Index](#phase-index)
-- [Current Phase Details](roadmap/phases/phase-13-strategies.md)
+- [Current Phase Details](roadmap/phases/phase-08-execution.md)
 - [Dependencies Graph](#dependencies-graph)
 
 ---
@@ -79,24 +79,25 @@ Phase 0 (Bootstrap) ✅
 
 ## Current Phase Summary
 
-**Phase 13 — Advanced Strategy Toolkit** 📋
+**Phase 8 — Execution Layer** 📋
 
-Advanced quantitative strategies with factor models, ML feature engineering, and ensemble meta-strategies.
+Implement sophisticated order execution algorithms, smart routing, and realistic slippage/fee simulation.
 
 **Sub-Phases:**
-- 13.0: Factor Model Contracts
-- 13.1: Momentum Factor Calculator
-- 13.2: Mean Reversion Factor Calculator
-- 13.3: Carry & Volatility Factors
-- 13.4: Volume & Microstructure Factors
-- 13.5: ML Feature Engineering Pipeline (offline only)
-- 13.6: Factor Scoring Strategy
-- 13.7: Statistical Arbitrage Strategy
-- 13.8: Ensemble Meta-Strategy
-- 13.9: Regime-Adaptive Strategy
-- 13.10: Advanced Strategy Documentation
+- 8.0: Execution Layer Foundations (BusProto, BaseExecutor, adapters)
+- 8.1: Execution Contracts (ExecutionAlgorithm, ExecutionSlice, ExecutionReport)
+- 8.2: TWAP Algorithm (Time-Weighted Average Price)
+- 8.3: VWAP Algorithm (Volume-Weighted Average Price)
+- 8.4: Iceberg Algorithm (Hidden order display)
+- 8.5: POV Algorithm (Percentage of Volume)
+- 8.6: Slippage Models (Linear, square-root market impact)
+- 8.7: Smart Order Router (Algorithm selection logic)
+- 8.8: Execution Simulator (Backtest integration)
+- 8.9: Execution Performance Metrics (Implementation shortfall, slippage tracking)
 
-**Full Details:** [roadmap/phases/phase-13-strategies.md](roadmap/phases/phase-13-strategies.md)
+**Full Details:** [roadmap/phases/phase-08-execution.md](roadmap/phases/phase-08-execution.md)
+
+**Note:** Phases 8-13 have detailed specifications but are not yet implemented. Implementation follows dependency order (8 → 9 → 10 → 11 → 12 → 13).
 
 ---
 
