@@ -148,13 +148,13 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 
 ---
 
-### **Phase 4** — Market Data Storage
+### **Phase 4** — Market Data Storage ✅
 - Persist OHLCV + tick streams to disk
 - Compression (gzip/lz4)
 - Rotation policy
 - Replay hooks for backtesting
 
-### **Phase 5** — Backtester
+### **Phase 5** — Backtester ✅
 - Deterministic event replay
 - Golden equity curve validation
 - Parameter sweep harness
@@ -164,12 +164,12 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Risk-weighted rebalancing
 - Kill-switch integration
 
-### **Phase 7** — Research API (IN PROGRESS)
+### **Phase 7** — Research API ✅
 - Pandas/PyArrow data interface
 - Jupyter notebook integration (offline only)
 - **Dependencies:** pandas, pyarrow, matplotlib, jupyter (optional install group)
 
-### **Phase 8** — Execution Layer
+### **Phase 8** — Execution Layer (IN PROGRESS)
 - Smart order router (TWAP, VWAP, iceberg)
 - Simulated slippage/fees
 - Exchange microstructure adapters

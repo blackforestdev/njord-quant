@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -26,7 +26,7 @@ def parse_timestamp(date_str: str) -> int:
     Returns:
         Timestamp in nanoseconds (UTC)
     """
-    dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
     return int(dt.timestamp() * 1_000_000_000)
 
 

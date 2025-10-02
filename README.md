@@ -42,10 +42,10 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - [docs/](./docs): Supplemental design notes and decision records (as available).
 
 ## Current Phase
-**Phase 7 — Research API**
-- Kickstarts researcher tooling with portfolio-aware data access (pandas/PyArrow), backtest result loaders, and notebook-friendly helpers.
-- Builds on the completed portfolio allocator (Phase 6) to surface strategy and portfolio metrics for offline analysis.
-See [ROADMAP.md#phase-7-—-research-api](./ROADMAP.md#phase-7-—-research-api) for the upcoming task breakdown and acceptance criteria.
+**Phase 8 — Execution Layer**
+- Builds the execution layer with smart order routing and slippage modelling as outlined for Phase 8.
+- Transitions from the completed Research API work (Phase 7) toward live-focused execution capabilities.
+See [ROADMAP.md#phases-8-16-outline-only](./ROADMAP.md#phases-8-16-outline-only) for the upcoming task breakdown and acceptance criteria.
 
 ## Project Structure
 ```text
@@ -103,7 +103,9 @@ njord_quant/
 - **Phase 4 — Market Data Storage:** Persistent OHLCV/tick storage, compression, and replay hooks ✅
 - **Phase 5 — Backtester:** Contracts, engine core, fill simulation, equity curve, metrics, CLI, golden tests, parameter sweeps, and reporting ✅
 - **Phase 6 — Portfolio Allocator:** Multi-strategy capital allocation, risk adjustment, portfolio backtesting, and reporting ✅
-- **Phase 7–16:** Research APIs, execution enhancements, telemetry, compliance, deployment, and optimization initiatives 📋
+- **Phase 7 — Research API:** Data reader, aggregation stack, research CLI, and documentation ✅
+- **Phase 8 — Execution Layer:** Smart routing and slippage tooling for execution services 🚧
+- **Phase 9–16:** Telemetry, compliance, deployment, and optimization initiatives 📋
 
 ## Support & Licensing
 - Maintained by **Njord Trust LLC**.
