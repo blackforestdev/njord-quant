@@ -9,24 +9,39 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - **Data Guarantees:** Append-only NDJSON journaling, replayable event history, and deterministic goldens.
 
 ## Core Capabilities
-- Market data ingestion with deduplication, journaling, and reconnect logic.
-- Strategy plugin framework with hot-swappable strategies that emit `OrderIntent` events routed through the risk engine.
-- Risk engine enforcing notional caps, loss limits, rate guards, and kill-switch controls.
-- Paper trading OMS and dry-run live broker adapter to ensure risk-first execution.
-- Deterministic backtesting engine with replay, fill simulation, golden tests, and report generation.
-- Portfolio allocator (Phase 6) introducing multi-strategy capital management, rebalancing, and portfolio reporting.
-- Risk-adjusted allocator (Phase 6.7) that modulates capital based on strategy performance metrics.
-- Portfolio backtest engine (Phase 6.8) aggregating strategy runs into portfolio-level equity and metrics.
-- Research data reader (Phase 7.1) providing pandas/PyArrow access to journaled OHLCV, trades, fills, and positions.
-- Portfolio report generator (Phase 6.9) producing interactive HTML summaries with allocations and rebalances.
+
+### Trading Infrastructure (Phases 0-3) ✅
+- Market data ingestion with deduplication, journaling, and reconnect logic
+- Strategy plugin framework with hot-swappable strategies emitting `OrderIntent` events
+- Risk engine enforcing notional caps, loss limits, rate guards, and kill-switch controls
+- Paper trading OMS and dry-run live broker adapter ensuring risk-first execution
+
+### Data & Analytics (Phases 4-7) ✅
+- Persistent OHLCV/tick storage with compression and replay hooks
+- Deterministic backtesting engine with fill simulation, golden tests, and parameter sweeps
+- Portfolio allocator with multi-strategy capital management, risk adjustment, and rebalancing
+- Research API providing pandas/PyArrow access to journaled OHLCV, trades, fills, and positions
+- Interactive HTML reporting with equity curves, allocations, and performance metrics
+
+### Execution, Observability & Compliance (Phases 8-12) 📋
+- **Execution Layer (Phase 8):** TWAP/VWAP/Iceberg/POV algorithms, slippage models, smart order routing
+- **Metrics & Telemetry (Phase 9):** Prometheus exporter, Grafana dashboards, performance attribution, real-time metrics (gated by `NJORD_ENABLE_METRICS`)
+- **Live Trade Controller (Phase 10):** Unified CLI (`njord-ctl`), process management, config hot-reload, session tracking, log aggregation
+- **Monitoring & Alerts (Phase 11):** Alert rules engine, multi-channel notifications (log/Redis/webhook/email/Slack stubs), deduplication (gated by `NJORD_ENABLE_ALERTS`)
+- **Compliance & Audit (Phase 12):** Immutable audit logging, deterministic replay validation, order book reconstruction, regulatory exports, audit CLI/service (gated by `NJORD_ENABLE_AUDIT`)
 
 ## System Architecture
 - **core/**: Shared primitives such as the Pydantic config loader, structured logging, Redis bus wrapper, contracts, kill switch helpers, and NDJSON journals.
-- **apps/**: Long-running services (`md_ingest`, `risk_engine`, `paper_trader`, `broker_binanceus`) deployed under `systemd`.
+- **apps/**: Long-running services (`md_ingest`, `risk_engine`, `paper_trader`, `broker_binanceus`, `portfolio_manager`, `alert_service`) deployed under `systemd`.
 - **strategies/**: Strategy plugin framework with registry/manager, sample strategies, and golden tests for deterministic signal generation.
 - **risk/**: Risk policy modules applied by the risk engine.
 - **backtest/**: Deterministic replay engine, fill simulation, analytics tooling, and reporting assets.
 - **portfolio/**: Multi-strategy allocator components (contracts, allocation logic, rebalancer, backtests, reporting).
+- **execution/**: Execution algorithms (TWAP, VWAP, Iceberg, POV), slippage models, smart order router.
+- **research/**: Data reader, aggregation stack, validation tools, export utilities, and research CLI.
+- **telemetry/**: Prometheus exporter, metric aggregation, performance attribution, real-time dashboard.
+- **controller/**: Process manager, config hot-reload, session tracking, health checks, log aggregation.
+- **alerts/**: Alert rules engine, notification channels (log/Redis/webhook/email/Slack), alert CLI.
 - **tests/**: Unit, integration, and golden suites ensuring strict guardrails.
 
 ### Event Flow
@@ -37,27 +52,37 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 
 ## Documentation Map
 - [AGENTS.md](./AGENTS.md): Strategic SOPs, coding standards, and non-negotiable guardrails.
-- [ROADMAP.md](./ROADMAP.md): Phase-by-phase implementation tasks and acceptance criteria (current focus: Phase 8).
+- [ROADMAP.md](./ROADMAP.md): Phase-by-phase implementation tasks and acceptance criteria (Phases 0-12 specified).
 - [CLAUDE.md](./CLAUDE.md): Claude Code entry point referencing AGENTS.md.
 - [docs/](./docs): Supplemental design notes and decision records (as available).
 
 ## Current Phase
-**Phase 8 — Execution Layer**
-- Builds the execution layer with smart order routing and slippage modelling as outlined for Phase 8.
-- Transitions from the completed Research API work (Phase 7) toward live-focused execution capabilities.
-See [ROADMAP.md#phases-8-16-outline-only](./ROADMAP.md#phases-8-16-outline-only) for the upcoming task breakdown and acceptance criteria.
+**Phase 12 — Compliance & Audit** 📋
+- Immutable audit logger with checksum chaining (async append-only writes)
+- Service instrumentation for orders, fills, risk decisions, config changes, kill-switch events
+- Deterministic replay engine and order book reconstruction for verification workflows
+- Regulatory exports (FIX trade capture, CSV blotter, position reconciliation)
+- Audit service daemon (localhost-only, gated by `NJORD_ENABLE_AUDIT`) and compliance CLI
+
+See [ROADMAP.md](./ROADMAP.md) for detailed implementation specifications (Phases 8-12 fully specified).
 
 ## Project Structure
 ```text
 njord_quant/
-├── apps/               # Service daemons (md_ingest, risk_engine, paper_trader, broker_binanceus)
+├── apps/               # Service daemons (md_ingest, risk_engine, paper_trader, broker_binanceus,
+│                       #                  portfolio_manager, alert_service, metrics_dashboard)
 ├── backtest/           # Backtesting engine components and analytics tooling
 ├── config/             # Environment configuration and encrypted secrets
 ├── core/               # Shared primitives (config, logging, bus, contracts, journals, kill switch)
 ├── risk/               # Risk rule modules
 ├── strategies/         # Strategy plugin framework and samples
 ├── portfolio/          # Portfolio allocator, risk adjustment, reporting, and manager integration
-├── research/           # Data reader, aggregation, and research tooling (Phase 7)
+├── execution/          # Execution algorithms (TWAP, VWAP, Iceberg, POV), slippage models, router
+├── research/           # Data reader, aggregation, validation, export utilities, research CLI
+├── telemetry/          # Prometheus exporter, metric aggregation, performance attribution
+├── controller/         # Process manager, config hot-reload, session tracking, health checks
+├── alerts/             # Alert rules engine, notification channels, alert CLI
+├── compliance/         # Audit logger, replay engine, order book reconstruction, reporting
 ├── tests/              # Unit, integration, and golden suites
 └── var/                # Structured logs and runtime state (append-only NDJSON)
 ```
@@ -82,18 +107,56 @@ njord_quant/
 - `apps/paper_trader`: Simulated fills, position tracking, and PnL calculations for dry-run environments.
 - `apps/broker_binanceus`: Live adapter enforcing dry-run defaults, notional caps, and kill-switch compliance.
 - `apps/portfolio_manager`: Coordinates strategy fills, rebalancing, and publishes portfolio snapshots.
+- `apps/metric_aggregator`: Aggregates metrics, downsamples data, publishes to Prometheus exporter.
+- `apps/metrics_dashboard`: Real-time web dashboard with auto-refresh metrics (WebSocket/SSE).
+- `apps/alert_service`: Evaluates alert rules, routes notifications to configured channels (gated by `NJORD_ENABLE_ALERTS`).
+- `apps/audit_service`: Real-time immutable audit logging, query & integrity verification APIs (gated by `NJORD_ENABLE_AUDIT`).
+- `controller/`: Unified CLI (`njord-ctl`) for process management, config reload, session tracking.
 
 ## Configuration & Secrets
 - `config/base.yaml`: Core application settings (environment, Redis endpoints, logging directories).
 - `config/strategies.yaml`: Strategy registry and parameterization for the plugin framework.
-- `config/portfolio.yaml`: Example portfolio configuration consumed by the portfolio manager service.
+- `config/portfolio.yaml`: Portfolio configuration consumed by the portfolio manager service.
+- `config/alerts.yaml`: Alert rules and notification channel configuration.
+- `config/compliance.yaml`: Audit/replay settings, regulatory export templates.
 - `config/secrets.enc.yaml`: SOPS-encrypted secrets; never commit decrypted values.
 - Live trading requires explicit flags: `app.env=live` and `NJORD_ENABLE_LIVE=1`.
+- Metrics/alerts/audit gated by env vars: `NJORD_ENABLE_METRICS=1`, `NJORD_ENABLE_ALERTS=1`, `NJORD_ENABLE_AUDIT=1`.
 
 ## Logging & Observability
-- Structured logging via `structlog` writes NDJSON entries to `var/log/njord/`.
-- Journals capture market data, intents, and fills for replay and audit.
+- **Structured Logging:** `structlog` writes NDJSON entries to `var/log/njord/` (app logs, journals, alerts).
+- **Metrics:** Prometheus exporter on `http://localhost:9090/metrics` (localhost-only by default).
+- **Dashboards:** Grafana configs for system health, trading activity, strategy performance, execution quality.
+- **Real-time Dashboard:** Metrics dashboard on `http://localhost:8080` with 1-second auto-refresh.
+- **Alerts:** Alert service evaluates rules, publishes to `var/log/njord/alerts.ndjson` and configured channels.
+- **Process Control:** `njord-ctl` CLI for start/stop/restart/reload/status/logs/session management.
 - Operational scripts (kill switch, status checks) live in `scripts/`; systemd units reside in `deploy/systemd/`.
+
+## Security & Best Practices
+
+### Localhost-Only Binding (Defense in Depth)
+- **Metrics Exporter:** Binds to `127.0.0.1:9090` by default (Prometheus scraper must be local or tunneled)
+- **Metrics Dashboard:** Binds to `127.0.0.1:8080` by default (web access via SSH tunnel or local browser)
+- **Controller API:** Binds to `127.0.0.1:9091` by default (njord-ctl commands local only)
+- **Alert Service:** Health check on `127.0.0.1:9092` by default
+- **Production Access:** Explicitly set `bind_host` parameter to expose on network interfaces
+
+### Secrets Management
+- **Environment Variables:** All secrets loaded from env vars (webhook URLs, SMTP credentials, API tokens)
+- **Config References:** Use `${ENV_VAR_NAME}` syntax in YAML configs (e.g., `${NJORD_ALERT_WEBHOOK_URL}`)
+- **SOPS Encryption:** `config/secrets.enc.yaml` encrypted at rest (never commit decrypted)
+- **No Hardcoded Secrets:** Repository contains zero plaintext credentials
+
+### Feature Gating
+- **Live Trading:** Requires `app.env=live` in config AND `NJORD_ENABLE_LIVE=1` env var
+- **Metrics Emission:** Gated by `NJORD_ENABLE_METRICS=1` (disabled in tests by default)
+- **Alert Notifications:** Gated by `NJORD_ENABLE_ALERTS=1` (disabled in tests by default)
+
+### Kill-Switch Enforcement
+- **File-Based:** `/tmp/njord_killswitch` presence trips all services
+- **Redis-Based:** `njord:killswitch` key trips all services
+- **Process Manager:** Checks kill-switch before starting live services (refuses if tripped)
+- **Alert Integration:** Critical alerts fire when kill-switch triggered
 
 ## Roadmap Snapshot
 - **Phase 0 — Bootstrap & Guardrails:** Tooling, config loader, structured logging, NDJSON journal ✅
@@ -104,8 +167,11 @@ njord_quant/
 - **Phase 5 — Backtester:** Contracts, engine core, fill simulation, equity curve, metrics, CLI, golden tests, parameter sweeps, and reporting ✅
 - **Phase 6 — Portfolio Allocator:** Multi-strategy capital allocation, risk adjustment, portfolio backtesting, and reporting ✅
 - **Phase 7 — Research API:** Data reader, aggregation stack, research CLI, and documentation ✅
-- **Phase 8 — Execution Layer:** Smart routing and slippage tooling for execution services 🚧
-- **Phase 9–16:** Telemetry, compliance, deployment, and optimization initiatives 📋
+- **Phase 8 — Execution Layer:** TWAP/VWAP/Iceberg/POV algorithms, slippage models, smart order routing 📋
+- **Phase 9 — Metrics & Telemetry:** Prometheus exporter, Grafana dashboards, performance attribution, real-time metrics 📋
+- **Phase 10 — Live Trade Controller:** Unified CLI (njord-ctl), process management, config hot-reload, session tracking 📋
+- **Phase 11 — Monitoring & Alerts:** Alert rules engine, multi-channel notifications, deduplication 📋
+- **Phase 12–16:** Compliance & audit, advanced strategies, simulation harness, deployment, optimization 📋
 
 ## Support & Licensing
 - Maintained by **Njord Trust LLC**.

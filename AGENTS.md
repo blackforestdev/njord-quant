@@ -4,7 +4,7 @@
 
 Implement a **robust, research-driven algorithmic trading framework** for cryptocurrency markets in **16 incremental phases**. Each phase delivers small, reviewable diffs (≤150 LOC / ≤4 files) that maintain 100% green guardrails: formatted, linted, typed, and tested.
 
-**Current Status:** Phase 3.8 — Strategy Plugin Framework
+**Current Status:** Phase 12 — Compliance & Audit
 **Target:** Phase 16 — Production-ready autonomous trading system
 
 ## Documentation Hierarchy
@@ -28,6 +28,7 @@ This project maintains three levels of agent guidance:
   - Risk caps and kill-switch protections are **never bypassed**
   - **Never commit secrets** — `config/secrets.enc.yaml` stays encrypted
   - Production environment requires explicit flags (`env=live` + `NJORD_ENABLE_LIVE=1`)
+  - Observability/alerting/audit services remain disabled unless their gating env vars are set (`NJORD_ENABLE_METRICS`, `NJORD_ENABLE_ALERTS`, `NJORD_ENABLE_AUDIT`)
   - Each phase **must not break prior phases** — earlier tests must remain green
 
 ### 2. Iteration Discipline
@@ -109,45 +110,6 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Kill-switch (file + Redis) integration
 - Idempotency checks (intent deduplication)
 
-### **Phase 3** — Live Broker (Binance.US) ✅
-- 3.0–3.5: Adapter, reconnect, dry-run echo, $10 hard cap
-- 3.6–3.7: Kill-switch enforcement (file + Redis)
-- **3.8: Strategy Plugin Framework** ← **CURRENT PHASE**
-
-### **Phase 3.8** — Strategy Plugin Framework ✅
-**Status:** Complete
-**Task:** Implement hot-swappable strategy system with context injection and order intent generation.
-
-**Requirements:**
-- Abstract base class `StrategyBase` with `on_event()` hook
-- Strategy `Context` dataclass: current positions, recent prices, bus handle
-- `OrderIntent` generation from strategy signals
-- `StrategyRegistry` for discovery and instantiation
-- `StrategyManager` for lifecycle (load, hot-reload, teardown)
-- Config schema: `strategies.yaml` with per-strategy params
-- Sample strategies: `trendline_break`, `rsi_tema_bb`
-- Golden tests: deterministic signal generation
-- Dry-run compliance: strategies never touch live broker directly
-
-**Constraints:**
-- No new dependencies beyond existing stack
-- Strategies must be stateless or use provided `Context`
-- All strategies must emit `OrderIntent` to risk engine (no direct broker calls)
-- Keep each strategy ≤100 LOC
-- Golden tests must remain ≤1k JSONL lines and live under `tests/golden/`
-
-**Deliverables:**
-1. `strategies/base.py` (ABC with `on_event()`)
-2. `strategies/context.py` (injected state container)
-3. `strategies/registry.py` (discovery + factory)
-4. `strategies/manager.py` (lifecycle management)
-5. `config/strategies.yaml` (config schema)
-6. `strategies/samples/trendline_break.py`
-7. `strategies/samples/rsi_tema_bb.py`
-8. `tests/test_strategy_*.py` (golden signal tests)
-
----
-
 ### **Phase 4** — Market Data Storage ✅
 - Persist OHLCV + tick streams to disk
 - Compression (gzip/lz4)
@@ -198,12 +160,34 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Health checks (HTTP /health endpoints, Redis ping, auto-restart)
 - Log aggregation (tail, filter, search, colorized, chronological merge)
 - Controller daemon (persistent service, HTTP control API)
+
+### **Phase 11** — Monitoring & Alerts 📋
+- Alert contracts, bus, and rule engine tied to metrics stream
+- Notification channels: log, Redis, webhook (email/Slack stubs)
+- Alert service daemon (localhost-only, `NJORD_ENABLE_ALERTS` gate)
+- Alert CLI for listing, testing, and acknowledging alerts
+- Documentation covering architecture, rules, runbooks
+
+### **Phase 12** — Compliance & Audit 📋 ← **CURRENT PHASE**
+- Immutable audit logger with checksum chaining (async, append-only)
+- Service instrumentation for audit hooks (orders, fills, risk, config, kill-switch)
+- Deterministic replay engine and order book reconstruction
+- Regulatory exports (FIX, trade blotter, reconciliation)
+- Audit service daemon (localhost-only, `NJORD_ENABLE_AUDIT` gate) + CLI & docs
+- Compliance documentation: architecture, audit trail, replay, regulatory guides
 - **No new runtime dependencies** (stdlib + existing stack only)
 - **Graceful shutdown:** SIGTERM handling for all services
 
-### **Phase 11** — Monitoring & Alerts
-- Alert bus (errors, kill-switch trips, PnL drawdowns)
-- Slack/Email notification stubs (no secrets in repo)
+### **Phase 11** — Monitoring & Alerts 📋
+- Alert contracts (Alert, AlertRule, NotificationChannel)
+- Alert bus with routing, deduplication (Redis TTL), and rate limiting
+- Rule engine with metric evaluation and duration tracking
+- Notification channels: log, Redis, webhook, email (stub), Slack (stub)
+- Alert service daemon with health checks and SIGTERM handling
+- Alert CLI for management and testing
+- **Production gating:** NJORD_ENABLE_ALERTS=1 (disabled by default)
+- **Security:** Env vars for secrets, localhost binding by default (127.0.0.1:9092)
+- **No runtime dependencies** (stdlib + existing stack only)
 
 ### **Phase 12** — Compliance & Audit
 - Append-only audit logs (immutable)
