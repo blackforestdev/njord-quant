@@ -177,15 +177,29 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Execution performance metrics
 - **Architecture:** All executors emit OrderIntent → Risk Engine → Broker (no bypass)
 
-### **Phase 9** — Metrics & Telemetry
-- Prometheus metrics exporter
-- Grafana dashboard configs
-- Strategy performance attribution
+### **Phase 9** — Metrics & Telemetry 📋
+- Prometheus metrics exporter with HTTP /metrics endpoint
+- Service instrumentation (risk_engine, paper_trader, broker, strategies)
+- Grafana dashboard configs (system health, trading, performance, execution)
+- Metric aggregation service with downsampling and persistence
+- Performance attribution (Brinson, factor-based, risk-adjusted)
+- Real-time metrics dashboard (WebSocket/SSE)
+- Alert system with YAML-defined rules
+- Metrics retention and cleanup
+- **No runtime dependencies** (Prometheus/Grafana deployment-only)
+- **Performance:** <1% overhead, cardinality bounded
 
-### **Phase 10** — Live Trade Controller
-- Unified CLI (`njord-ctl start|stop|reload`)
-- Config hot-reload
-- Session journaling
+### **Phase 10** — Live Trade Controller 📋
+- Unified CLI: `njord-ctl start|stop|restart|reload|status|logs|session`
+- Service registry with auto-discovery and dependency ordering
+- Process manager (start/stop/restart with PID tracking, SIGTERM → SIGKILL)
+- Config hot-reload (SHA256 hash, Redis pub/sub signal, no restart)
+- Session manager (UUID session_id, NDJSON journaling, config hash tracking)
+- Health checks (HTTP /health endpoints, Redis ping, auto-restart)
+- Log aggregation (tail, filter, search, colorized, chronological merge)
+- Controller daemon (persistent service, HTTP control API)
+- **No new runtime dependencies** (stdlib + existing stack only)
+- **Graceful shutdown:** SIGTERM handling for all services
 
 ### **Phase 11** — Monitoring & Alerts
 - Alert bus (errors, kill-switch trips, PnL drawdowns)

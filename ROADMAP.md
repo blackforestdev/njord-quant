@@ -2731,6 +2731,8 @@ class SyncExecutionWrapper:
 - SyncExecutionWrapper only used in pure sync contexts (backtest)
 - All timestamps use `*_ns` suffix convention
 - Execution slice client_order_id maps to OrderIntent.intent_id
+- **CRITICAL: Child OrderIntents must pack execution_id and slice_id into OrderIntent.meta for fill tracking**
+- **Test verifies round-trip: OrderIntent.meta → Fill → ExecutionReport recovery**
 - Test verifies asyncio.run() raises in existing event loop
 - `make fmt lint type test` green
 
@@ -2839,7 +2841,16 @@ class TWAPExecutor(BaseExecutor):
         scheduled_ts_ns: int,
         current_price: float
     ) -> OrderIntent:
-        """Create OrderIntent for individual slice."""
+        """Create OrderIntent for individual slice.
+
+        IMPORTANT: Must pack execution_id and slice_id into OrderIntent.meta:
+            meta = {
+                "execution_id": execution_id,
+                "slice_id": f"{execution_id}_{slice_idx}",
+                ...
+            }
+        This enables fill tracking and ExecutionReport recovery.
+        """
         pass
 
     async def _monitor_fills(
@@ -2859,10 +2870,12 @@ class TWAPExecutor(BaseExecutor):
 - Returns list[OrderIntent], NO broker calls
 - Slices scheduled at correct intervals (scheduled_ts_ns)
 - Total quantity distributed evenly across slices
+- **Each OrderIntent.meta includes execution_id and slice_id for fill tracking**
 - Cancel intents generated for unfilled slices
-- Fill tracking via bus subscription works correctly
+- Fill tracking via bus subscription works correctly (recovers execution_id from FillEvent metadata)
 - Execution report tracks progress correctly
 - Test includes partial fill scenario
+- **Test verifies OrderIntent.meta → FillEvent → ExecutionReport round-trip**
 - `make fmt lint type test` green
 
 ---
@@ -2922,7 +2935,10 @@ class VWAPExecutor(BaseExecutor):
         scheduled_ts_ns: int,
         current_price: float
     ) -> OrderIntent:
-        """Create OrderIntent for volume-weighted slice."""
+        """Create OrderIntent for volume-weighted slice.
+
+        IMPORTANT: Must pack execution_id and slice_id into OrderIntent.meta for fill tracking.
+        """
         pass
 ```
 
@@ -2934,9 +2950,11 @@ class VWAPExecutor(BaseExecutor):
 - Returns list[OrderIntent], NO broker calls
 - Volume profile calculated from historical data
 - Slices weighted correctly by volume
+- **Each OrderIntent.meta includes execution_id and slice_id for fill tracking**
 - VWAP tracking accurate vs. benchmark
 - Handles missing volume data gracefully
 - Test includes volume distribution validation
+- **Test verifies OrderIntent.meta → FillEvent round-trip**
 - `make fmt lint type test` green
 
 ---
@@ -2982,7 +3000,10 @@ class IcebergExecutor(BaseExecutor):
         limit_price: float,
         scheduled_ts_ns: int
     ) -> OrderIntent:
-        """Create OrderIntent for visible portion of iceberg."""
+        """Create OrderIntent for visible portion of iceberg.
+
+        IMPORTANT: Must pack execution_id and slice_id into OrderIntent.meta for fill tracking.
+        """
         pass
 
     async def _monitor_and_replenish(
@@ -3003,9 +3024,11 @@ class IcebergExecutor(BaseExecutor):
 - Returns list[OrderIntent], NO broker calls
 - Only visible_ratio quantity in initial intent
 - Replenishment intents generated when threshold reached
+- **Each OrderIntent.meta includes execution_id and slice_id for fill tracking**
 - Total quantity hidden from market view
 - Handles partial fills correctly
 - Test includes multiple replenishment cycles
+- **Test verifies OrderIntent.meta → FillEvent round-trip for replenishment**
 - `make fmt lint type test` green
 
 ---
@@ -3074,10 +3097,12 @@ class POVExecutor(BaseExecutor):
 **Acceptance:**
 - Returns list[OrderIntent], NO broker calls
 - Maintains target POV within 5% tolerance
+- **Each OrderIntent.meta includes execution_id and slice_id for fill tracking**
 - No intents emitted when volume below threshold
 - Accelerates to catch up if behind
 - Handles volume spikes gracefully
 - Test includes varying volume scenarios
+- **Test verifies OrderIntent.meta → FillEvent round-trip for dynamic slicing**
 - `make fmt lint type test` green
 
 ---
@@ -3102,9 +3127,17 @@ class SlippageModel(ABC):
         self,
         order_size: float,
         market_volume: float,
-        bid_ask_spread: float
+        bid_ask_spread: float,
+        reference_price: float
     ) -> float:
-        """Calculate expected slippage in price units."""
+        """Calculate expected slippage in price units.
+
+        Args:
+            order_size: Order quantity
+            market_volume: Average market volume
+            bid_ask_spread: Current bid-ask spread
+            reference_price: Reference price for impact calculation
+        """
         pass
 
 class LinearSlippageModel(SlippageModel):
@@ -3114,9 +3147,10 @@ class LinearSlippageModel(SlippageModel):
         self,
         order_size: float,
         market_volume: float,
-        bid_ask_spread: float
+        bid_ask_spread: float,
+        reference_price: float
     ) -> float:
-        """Linear slippage: impact_coef * (order_size / volume) * price."""
+        """Linear slippage: impact_coef * (order_size / volume) * reference_price."""
         pass
 
 class SquareRootSlippageModel(SlippageModel):
@@ -3126,9 +3160,10 @@ class SquareRootSlippageModel(SlippageModel):
         self,
         order_size: float,
         market_volume: float,
-        bid_ask_spread: float
+        bid_ask_spread: float,
+        reference_price: float
     ) -> float:
-        """Square-root slippage: impact_coef * sqrt(order_size / volume) * price."""
+        """Square-root slippage: impact_coef * sqrt(order_size / volume) * reference_price."""
         pass
 ```
 
@@ -3137,10 +3172,11 @@ class SquareRootSlippageModel(SlippageModel):
 - `tests/test_slippage_model.py`
 
 **Acceptance:**
-- Linear model produces expected slippage
-- Square-root model matches empirical data
+- Linear model produces expected slippage (includes reference_price in calculation)
+- Square-root model matches empirical data (includes reference_price in calculation)
 - Bid-ask spread cost added correctly
 - Handles edge cases (zero volume, huge orders)
+- Test validates reference_price is used in slippage calculation (not just order_size/volume)
 - Test includes calibration to real data
 - `make fmt lint type test` green
 
@@ -3507,10 +3543,1878 @@ Each task builds on the previous, maintaining clean separation of concerns and a
 
 ---
 
-## Phases 9-16 (Outline Only)
+## Phase 9 — Metrics & Telemetry 📋
 
-**Phase 9:** Metrics & Telemetry (Prometheus, Grafana)
-**Phase 10:** Live Trade Controller (unified CLI)
+**Purpose:** Implement comprehensive observability with Prometheus metrics, Grafana dashboards, and real-time performance tracking.
+
+**Current Status:** Phase 8 complete — Execution Layer fully operational
+**Next Phase:** Phase 10 — Live Trade Controller
+
+---
+
+### Phase 9.0 — Metrics Contracts 📋
+**Status:** Planned
+**Dependencies:** 8.9 (Execution Performance Metrics)
+**Task:** Define telemetry-specific contracts and metric types
+
+**Contracts:**
+```python
+@dataclass(frozen=True)
+class MetricSnapshot:
+    """Single metric measurement."""
+    name: str
+    value: float
+    timestamp_ns: int
+    labels: dict[str, str]  # e.g., {"strategy_id": "twap_v1", "symbol": "ATOM/USDT"}
+    metric_type: Literal["counter", "gauge", "histogram", "summary"]
+
+@dataclass(frozen=True)
+class StrategyMetrics:
+    """Strategy-level performance metrics."""
+    strategy_id: str
+    timestamp_ns: int
+    active_positions: int
+    total_pnl: float
+    daily_pnl: float
+    win_rate: float
+    sharpe_ratio: float
+    max_drawdown_pct: float
+    orders_sent: int
+    orders_filled: int
+    orders_rejected: int
+
+@dataclass(frozen=True)
+class SystemMetrics:
+    """System-level health metrics."""
+    timestamp_ns: int
+    bus_messages_sent: int
+    bus_messages_received: int
+    journal_writes: int
+    journal_bytes: int
+    active_subscriptions: int
+    event_loop_lag_ms: float
+    memory_usage_mb: float
+```
+
+**Files:**
+- `telemetry/contracts.py` (80 LOC)
+- `tests/test_telemetry_contracts.py`
+
+**Acceptance:**
+- All contracts immutable and typed
+- All timestamps use `*_ns` suffix
+- Metric types follow Prometheus conventions
+- Serializable to/from dict
+- Labels support cardinality limits (warn if >100 unique combos)
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.1 — Prometheus Metrics Exporter 📋
+**Status:** Planned
+**Dependencies:** 9.0 (Metrics Contracts)
+**Task:** Implement Prometheus-compatible metrics HTTP endpoint
+
+**Behavior:**
+- Expose metrics at `/metrics` endpoint (HTTP server on configurable port)
+- Support standard Prometheus metric types: Counter, Gauge, Histogram, Summary
+- Aggregate metrics from all services via Redis pub/sub
+- Follow Prometheus naming conventions (snake_case, `_total` suffix for counters)
+- Include help text and type hints in exposition format
+- Support metric labels with cardinality protection
+
+**API:**
+```python
+class PrometheusExporter:
+    def __init__(
+        self,
+        bus: BusProto,
+        port: int = 9090,
+        bind_host: str = "127.0.0.1",  # Localhost-only by default
+        registry: MetricRegistry | None = None
+    ): ...
+
+    async def start(self) -> None:
+        """Start HTTP server for /metrics endpoint.
+
+        Security:
+            - Binds to localhost (127.0.0.1) by default
+            - For production with Prometheus scraper on different host, explicitly set bind_host
+            - Optional: Require Bearer token via env var NJORD_METRICS_TOKEN
+        """
+        pass
+
+    async def collect_metrics(self) -> str:
+        """Collect all metrics and format for Prometheus.
+
+        Returns:
+            Metrics in Prometheus exposition format
+        """
+        pass
+
+    def register_counter(
+        self,
+        name: str,
+        help_text: str,
+        labels: list[str] | None = None
+    ) -> Counter:
+        """Register a counter metric."""
+        pass
+
+    def register_gauge(
+        self,
+        name: str,
+        help_text: str,
+        labels: list[str] | None = None
+    ) -> Gauge:
+        """Register a gauge metric."""
+        pass
+
+    def register_histogram(
+        self,
+        name: str,
+        help_text: str,
+        buckets: list[float],
+        labels: list[str] | None = None
+    ) -> Histogram:
+        """Register a histogram metric."""
+        pass
+```
+
+**Standard Metrics:**
+```
+# Counters
+njord_orders_total{strategy_id, symbol, side}
+njord_fills_total{strategy_id, symbol, side}
+njord_risk_rejections_total{reason}
+njord_bus_messages_total{topic, direction}
+
+# Gauges
+njord_active_positions{strategy_id, symbol}
+njord_portfolio_equity_usd{portfolio_id}
+njord_strategy_pnl_usd{strategy_id}
+njord_event_loop_lag_seconds
+
+# Histograms
+njord_fill_latency_seconds{strategy_id}
+njord_order_size_usd{strategy_id, symbol}
+njord_execution_slippage_bps{algo_type}
+```
+
+**Files:**
+- `telemetry/prometheus.py` (250 LOC)
+- `telemetry/registry.py` (100 LOC for metric storage)
+- `tests/test_prometheus_exporter.py`
+
+**Acceptance:**
+- HTTP endpoint serves metrics on `/metrics`
+- **Security: Binds to localhost (127.0.0.1) by default** (prevents public exposure)
+- **Security: Optional Bearer token auth via NJORD_METRICS_TOKEN env var**
+- Exposition format valid (Prometheus scraper compatible)
+- Counter increments persisted across scrapes
+- Gauge updates reflect latest values
+- Histogram buckets correctly categorize observations
+- Cardinality protection warns/rejects high-cardinality labels
+- Test includes scraping simulation (with/without auth token)
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.2 — Service Instrumentation 📋
+**Status:** Planned
+**Dependencies:** 9.1 (Prometheus Metrics Exporter)
+**Task:** Instrument core services with metrics collection
+
+**Behavior:**
+- Add metrics collection to risk_engine, paper_trader, broker, strategy_runner
+- Emit metrics to Redis topic `telemetry.metrics`
+- Prometheus exporter subscribes and aggregates
+- Use decorators for common patterns (timing, counting)
+- **Production gating: Check env var NJORD_ENABLE_METRICS=1 before emitting** (disabled in tests)
+- **Fallback: If Redis/bus unavailable, log metrics locally** (no service failure)
+- Minimal performance overhead (<1% latency increase)
+
+**Instrumentation Points:**
+
+**Risk Engine:**
+```python
+# Counters
+- njord_intents_received_total
+- njord_intents_allowed_total
+- njord_intents_denied_total{reason}
+- njord_killswitch_trips_total
+
+# Histograms
+- njord_risk_check_duration_seconds
+```
+
+**Paper Trader / Broker:**
+```python
+# Counters
+- njord_orders_placed_total{venue}
+- njord_fills_generated_total{venue}
+
+# Gauges
+- njord_open_orders{symbol}
+- njord_position_size{strategy_id, symbol}
+
+# Histograms
+- njord_fill_price_deviation_bps
+```
+
+**Strategy Runner:**
+```python
+# Counters
+- njord_signals_generated_total{strategy_id}
+- njord_strategy_errors_total{strategy_id}
+
+# Histograms
+- njord_signal_generation_duration_seconds{strategy_id}
+```
+
+**Helper Decorators:**
+```python
+@count_calls(metric_name="njord_function_calls_total")
+async def handle_intent(self, intent: OrderIntent) -> None:
+    ...
+
+@measure_duration(metric_name="njord_processing_duration_seconds")
+async def process_event(self, event: TradeEvent) -> None:
+    ...
+```
+
+**Files:**
+- `telemetry/decorators.py` (80 LOC)
+- Update `apps/risk_engine/main.py` (+50 LOC)
+- Update `apps/paper_trader/main.py` (+50 LOC)
+- Update `apps/broker_binanceus/main.py` (+50 LOC)
+- Update `apps/strategy_runner/main.py` (+50 LOC)
+- `tests/test_service_instrumentation.py`
+
+**Acceptance:**
+- All core services emit metrics to `telemetry.metrics` topic
+- **Metrics emission gated by NJORD_ENABLE_METRICS=1 env var** (disabled by default in tests)
+- **Graceful degradation: Metrics failures don't crash services** (log + continue)
+- Decorators correctly measure duration and count calls
+- Metrics include appropriate labels (strategy_id, symbol, etc.)
+- Performance overhead <1% (benchmark test)
+- Test verifies metrics disabled when NJORD_ENABLE_METRICS unset
+- Test verifies service continues if bus unavailable (fallback to local logging)
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.3 — Grafana Dashboard Configs 📋
+**Status:** Planned
+**Dependencies:** 9.2 (Service Instrumentation)
+**Task:** Create Grafana dashboard JSON configs for visualization
+
+**Deliverables:**
+
+**1. System Health Dashboard**
+- Event loop lag over time
+- Bus message throughput (messages/sec)
+- Memory usage per service
+- Journal write rates
+- Active subscriptions count
+
+**2. Trading Activity Dashboard**
+- Orders sent/filled/rejected (rate and count)
+- Fill latency distribution (P50, P95, P99)
+- Position sizes by strategy
+- Daily PnL by strategy (bar chart)
+- Risk rejection reasons (pie chart)
+
+**3. Strategy Performance Dashboard**
+- Equity curves (multi-strategy overlay)
+- Sharpe ratio comparison (bar chart)
+- Win rate by strategy (gauge)
+- Max drawdown by strategy (gauge)
+- Signal generation rate
+
+**4. Execution Quality Dashboard**
+- Execution slippage by algorithm (TWAP/VWAP/Iceberg/POV)
+- Implementation shortfall distribution
+- Venue fill rates
+- Order size distribution (histogram)
+
+**Dashboard Features:**
+- Variable selectors: strategy_id, symbol, time range
+- Alerts on critical thresholds (drawdown >10%, lag >100ms)
+- Drill-down from summary to detail views
+- Auto-refresh every 5 seconds
+
+**Files:**
+- `deploy/grafana/system_health.json` (dashboard config)
+- `deploy/grafana/trading_activity.json`
+- `deploy/grafana/strategy_performance.json`
+- `deploy/grafana/execution_quality.json`
+- `deploy/grafana/datasources.yaml` (Prometheus config)
+- `deploy/grafana/README.md` (import instructions)
+- `tests/test_dashboard_validity.py` (JSON schema validation)
+
+**Acceptance:**
+- Dashboard JSONs valid (Grafana import succeeds)
+- All panels query correct Prometheus metrics
+- Variable selectors work (tested with mock data)
+- Alerts configured with reasonable thresholds
+- README includes import and setup instructions
+- Test validates JSON structure
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.4 — Metric Aggregation Service 📋
+**Status:** Planned
+**Dependencies:** 9.3 (Grafana Dashboard Configs)
+**Task:** Centralized service for metric aggregation and persistence
+
+**Behavior:**
+- Subscribe to `telemetry.metrics` topic
+- Aggregate metrics in memory (rolling windows)
+- Persist aggregated metrics to journal
+- **Publish aggregated rollups to shared MetricRegistry** (consumed by PrometheusExporter)
+- **Integration: PrometheusExporter reads from same MetricRegistry instance** (passed in constructor)
+- **Flow: Raw metrics → Aggregator → Registry → Exporter → Prometheus scraper**
+- Support metric downsampling (1m → 5m → 1h → 1d)
+- Handle late-arriving metrics (grace period)
+
+**API:**
+```python
+class MetricAggregator:
+    def __init__(
+        self,
+        bus: BusProto,
+        journal_dir: Path,
+        registry: MetricRegistry,  # Shared with PrometheusExporter
+        retention_hours: int = 168  # 7 days
+    ): ...
+
+    async def run(self) -> None:
+        """Main aggregation loop."""
+        pass
+
+    async def aggregate_metrics(
+        self,
+        snapshot: MetricSnapshot
+    ) -> None:
+        """Aggregate incoming metric snapshot."""
+        pass
+
+    def downsample_to_interval(
+        self,
+        metrics: list[MetricSnapshot],
+        interval_seconds: int
+    ) -> list[MetricSnapshot]:
+        """Downsample metrics to interval (avg for gauges, sum for counters)."""
+        pass
+
+    def flush_to_journal(self) -> None:
+        """Persist aggregated metrics to journal."""
+        pass
+
+    def publish_to_registry(self, metrics: list[MetricSnapshot]) -> None:
+        """Publish aggregated metrics to shared MetricRegistry.
+
+        CRITICAL: This is how PrometheusExporter accesses aggregated data.
+        Both aggregator and exporter must share the same MetricRegistry instance.
+        """
+        pass
+```
+
+**Aggregation Rules:**
+- Counters: Sum over interval
+- Gauges: Average over interval (or last value)
+- Histograms: Merge buckets
+- Summary: Combine percentiles
+
+**Files:**
+- `apps/metric_aggregator/main.py` (200 LOC)
+- `telemetry/aggregation.py` (150 LOC)
+- `tests/test_metric_aggregator.py`
+
+**Acceptance:**
+- Subscribes to `telemetry.metrics` and aggregates
+- **CRITICAL: Publishes aggregated metrics to shared MetricRegistry** (PrometheusExporter integration)
+- **Test verifies MetricRegistry contains aggregated rollups** (not just raw metrics)
+- **Integration test: Aggregator + Exporter share same registry, exporter serves aggregated data**
+- Downsampling produces correct values (sum for counters, avg for gauges)
+- Journal persistence includes timestamp and labels
+- Late metrics handled within grace period (5 minutes)
+- Memory bounded (rolling window eviction)
+- Test includes downsample validation
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.5 — Performance Attribution 📋
+**Status:** Planned
+**Dependencies:** 9.4 (Metric Aggregation Service)
+**Task:** Attribute portfolio performance to individual strategies
+
+**Behavior:**
+- Track strategy contributions to portfolio PnL
+- Calculate attribution metrics (absolute, relative, risk-adjusted)
+- Identify performance drivers (alpha vs. beta)
+- Compare strategy performance vs. benchmark
+- Generate attribution reports
+
+**API:**
+```python
+class PerformanceAttribution:
+    def __init__(
+        self,
+        data_reader: DataReader,
+        portfolio_id: str
+    ): ...
+
+    def calculate_attribution(
+        self,
+        start_ts_ns: int,
+        end_ts_ns: int
+    ) -> AttributionReport:
+        """Calculate performance attribution.
+
+        Returns:
+            Attribution report with strategy contributions
+        """
+        pass
+
+    def attribute_pnl(
+        self,
+        portfolio_pnl: float,
+        strategy_pnls: dict[str, float],
+        strategy_weights: dict[str, float]
+    ) -> dict[str, float]:
+        """Attribute portfolio PnL to strategies.
+
+        Returns:
+            Dict mapping strategy_id to attributed PnL
+        """
+        pass
+
+    def calculate_alpha_beta(
+        self,
+        strategy_returns: list[float],
+        benchmark_returns: list[float]
+    ) -> tuple[float, float]:
+        """Calculate alpha and beta vs. benchmark.
+
+        Returns:
+            (alpha, beta) tuple
+        """
+        pass
+```
+
+**Attribution Methods:**
+- Brinson attribution (allocation + selection effects)
+- Factor-based attribution (decompose by risk factors)
+- Risk-adjusted attribution (Sharpe/Sortino weighted)
+
+**Files:**
+- `telemetry/attribution.py` (200 LOC)
+- `tests/test_performance_attribution.py`
+
+**Acceptance:**
+- PnL attribution matches portfolio total (sum test)
+- Alpha/beta calculation matches manual computation
+- Brinson attribution decomposes correctly
+- Handles missing strategy data gracefully
+- Test includes known attribution scenarios
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.6 — Real-Time Metrics Dashboard 📋
+**Status:** Planned
+**Dependencies:** 9.5 (Performance Attribution)
+**Task:** Web-based real-time metrics dashboard (optional HTML/JS)
+
+**Behavior:**
+- Lightweight web dashboard served on HTTP port
+- Auto-refresh metrics every 1 second (WebSocket or SSE)
+- Display key metrics: PnL, positions, orders, risk status
+- No external dependencies (embedded HTML/CSS/JS)
+- Read-only view (no controls)
+
+**API:**
+```python
+class MetricsDashboard:
+    def __init__(
+        self,
+        bus: BusProto,
+        port: int = 8080,
+        bind_host: str = "127.0.0.1"  # Localhost-only by default
+    ): ...
+
+    async def start(self) -> None:
+        """Start dashboard HTTP server.
+
+        Security:
+            - Binds to localhost (127.0.0.1) by default
+            - For production access from other hosts, explicitly set bind_host
+            - Optional: Require Bearer token via env var NJORD_DASHBOARD_TOKEN
+        """
+        pass
+
+    async def stream_metrics(self) -> AsyncIterator[dict[str, Any]]:
+        """Stream metrics updates via SSE."""
+        pass
+
+    def render_dashboard(self) -> str:
+        """Render dashboard HTML."""
+        pass
+```
+
+**Dashboard Sections:**
+- Portfolio Summary (equity, daily PnL, positions count)
+- Strategy Performance (Sharpe, win rate, PnL)
+- Risk Status (kill-switch, caps utilization)
+- Recent Activity (last 10 orders/fills)
+- System Health (bus lag, memory usage)
+
+**Files:**
+- `apps/metrics_dashboard/main.py` (150 LOC)
+- `apps/metrics_dashboard/templates/dashboard.html` (embedded)
+- `tests/test_metrics_dashboard.py`
+
+**Acceptance:**
+- Dashboard accessible at `http://localhost:8080`
+- **Security: Binds to localhost (127.0.0.1) by default** (prevents public exposure)
+- **Security: Optional Bearer token auth via NJORD_DASHBOARD_TOKEN env var**
+- Metrics update in real-time (1 sec refresh)
+- All sections display correct data
+- No external JS libraries (vanilla JS only)
+- Mobile-responsive layout
+- Test includes auth enforcement (valid/invalid token scenarios)
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.7 — Metric Alerts 📋
+**Status:** Planned
+**Dependencies:** 9.6 (Real-Time Metrics Dashboard)
+**Task:** Alert system for metric threshold violations
+
+**Behavior:**
+- Define alert rules in YAML config
+- Evaluate rules against incoming metrics
+- Fire alerts when thresholds breached
+- Support alert channels: log, Redis pub/sub, webhook (no Slack/email in phase 9)
+- Deduplication (avoid alert spam)
+- Auto-resolve when condition clears
+
+**Alert Rules Config:**
+```yaml
+alerts:
+  - name: high_drawdown
+    metric: njord_strategy_drawdown_pct
+    condition: "> 10.0"
+    duration: 60  # seconds
+    labels:
+      severity: critical
+    annotations:
+      summary: "Strategy {{ $labels.strategy_id }} drawdown exceeded 10%"
+
+  - name: event_loop_lag
+    metric: njord_event_loop_lag_seconds
+    condition: "> 0.1"
+    duration: 30
+    labels:
+      severity: warning
+```
+
+**API:**
+```python
+class AlertManager:
+    def __init__(
+        self,
+        bus: BusProto,
+        rules_path: Path
+    ): ...
+
+    async def evaluate_rules(
+        self,
+        snapshot: MetricSnapshot
+    ) -> list[Alert]:
+        """Evaluate alert rules against metric.
+
+        Returns:
+            List of alerts fired
+        """
+        pass
+
+    async def fire_alert(
+        self,
+        alert: Alert
+    ) -> None:
+        """Fire alert to configured channels."""
+        pass
+
+    def deduplicate_alert(
+        self,
+        alert: Alert
+    ) -> bool:
+        """Check if alert is duplicate (within time window).
+
+        Returns:
+            True if duplicate (skip), False if new
+        """
+        pass
+```
+
+**Files:**
+- `telemetry/alerts.py` (180 LOC)
+- `config/alerts.yaml` (example alert rules)
+- `tests/test_alert_manager.py`
+
+**Acceptance:**
+- Alert rules loaded from YAML
+- Threshold conditions evaluated correctly
+- Duration requirement enforced (must breach for N seconds)
+- Deduplication prevents spam (5 min window)
+- Alerts published to `telemetry.alerts` topic
+- Test includes threshold breach scenarios
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.8 — Metrics Retention & Cleanup 📋
+**Status:** Planned
+**Dependencies:** 9.7 (Metric Alerts)
+**Task:** Implement metrics retention policy and cleanup
+
+**Behavior:**
+- Define retention periods per metric type
+- Automatically delete old metrics from journal
+- Downsample old metrics (1m → 5m → 1h → 1d)
+- Compress old journals (gzip)
+- Scheduled cleanup task (daily cron)
+
+**Retention Policy:**
+```yaml
+retention:
+  raw_metrics:
+    - resolution: 1m
+      retention_days: 7
+    - resolution: 5m
+      retention_days: 30
+    - resolution: 1h
+      retention_days: 180
+    - resolution: 1d
+      retention_days: 730  # 2 years
+
+  cleanup_schedule: "0 2 * * *"  # 2 AM daily (cron format)
+```
+
+**Note:** Cron schedule validation uses simple regex (stdlib only, no croniter dependency).
+
+**API:**
+```python
+class MetricsRetention:
+    def __init__(
+        self,
+        journal_dir: Path,
+        policy: RetentionPolicy
+    ): ...
+
+    def apply_retention(self) -> None:
+        """Apply retention policy to metrics journals."""
+        pass
+
+    def downsample_metrics(
+        self,
+        source_resolution: str,
+        target_resolution: str,
+        cutoff_days: int
+    ) -> None:
+        """Downsample metrics older than cutoff."""
+        pass
+
+    def compress_journals(
+        self,
+        older_than_days: int
+    ) -> None:
+        """Compress journals older than threshold."""
+        pass
+
+    def delete_expired(
+        self,
+        older_than_days: int
+    ) -> None:
+        """Delete metrics older than retention period."""
+        pass
+```
+
+**Files:**
+- `telemetry/retention.py` (150 LOC)
+- `scripts/metrics_cleanup.py` (CLI for manual cleanup)
+- `tests/test_metrics_retention.py`
+
+**Acceptance:**
+- Retention policy correctly identifies old metrics
+- Downsampling produces correct aggregates
+- Compression reduces disk usage (test with sample data)
+- Deletion removes only expired metrics
+- Cron schedule parseable (basic format check: 5 space-separated fields, stdlib only, no external deps)
+- Test includes retention boundary conditions
+- `make fmt lint type test` green
+
+---
+
+### Phase 9.9 — Telemetry Documentation 📋
+**Status:** Planned
+**Dependencies:** 9.8 (Metrics Retention & Cleanup)
+**Task:** Document telemetry system and operational procedures
+
+**Deliverables:**
+
+**1. Metrics Catalog**
+- Complete list of all exposed metrics
+- Metric types, labels, help text
+- Example PromQL queries
+- Alert rule examples
+
+**2. Grafana Setup Guide**
+- Prometheus installation and configuration
+- Grafana installation and datasource setup
+- Dashboard import instructions
+- Alert channel configuration
+
+**3. Operations Runbook**
+- Starting/stopping telemetry services
+- Troubleshooting common issues
+- Metrics retention management
+- Performance tuning (cardinality, scrape interval)
+
+**4. API Documentation**
+- MetricSnapshot, StrategyMetrics, SystemMetrics contracts
+- PrometheusExporter usage
+- Instrumentation decorator usage
+- Custom metric registration
+
+**Files:**
+- `docs/telemetry/metrics_catalog.md`
+- `docs/telemetry/grafana_setup.md`
+- `docs/telemetry/operations_runbook.md`
+- `docs/telemetry/api_reference.md`
+- `tests/test_telemetry_docs.py` (validate links, code examples)
+
+**Acceptance:**
+- Metrics catalog complete (all metrics documented)
+- Setup guide tested (fresh Grafana installation)
+- Runbook covers common scenarios
+- API docs include working code examples
+- All markdown links valid
+- Code examples in docs execute without errors
+- `make fmt lint type test` green
+
+---
+
+**Phase 9 Acceptance Criteria:**
+- [ ] All 10 tasks completed (9.0-9.9)
+- [ ] `make fmt lint type test` green
+- [ ] Prometheus exporter serves metrics on `/metrics` endpoint
+- [ ] All core services instrumented with metrics
+- [ ] Grafana dashboards import and display data
+- [ ] Metric aggregation service running and persisting data
+- [ ] Performance attribution calculates correctly
+- [ ] Real-time dashboard accessible and updating
+- [ ] Alert rules fire on threshold violations
+- [ ] Metrics retention policy applied automatically
+- [ ] Documentation complete and verified
+- [ ] No runtime dependencies beyond existing stack (Prometheus/Grafana deployment-only)
+- [ ] Metric cardinality bounded (warn at 100 unique label combinations)
+- [ ] Performance overhead <1% (benchmark test)
+
+---
+
+## Integration with Existing System
+
+### Telemetry Flow
+```
+Services (risk_engine, paper_trader, broker, strategies)
+    ↓
+Emit MetricSnapshot to telemetry.metrics topic
+    ↓
+MetricAggregator (9.4) — Aggregate & Persist
+    ↓
+PrometheusExporter (9.1) — Serve /metrics endpoint
+    ↓
+Prometheus (external) — Scrape metrics
+    ↓
+Grafana (external) — Visualize dashboards
+    ↓
+AlertManager (9.7) — Fire alerts on thresholds
+    ↓
+Operators — Monitor & respond
+```
+
+### Example Telemetry Session
+```bash
+# 1. Start metric aggregator
+python -m apps.metric_aggregator --config ./config/base.yaml
+
+# 2. Start Prometheus exporter
+python -m telemetry.prometheus --port 9090
+
+# 3. Configure Prometheus to scrape
+cat > prometheus.yml <<EOF
+scrape_configs:
+  - job_name: 'njord'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 5s
+EOF
+
+# 4. Start Prometheus
+prometheus --config.file=prometheus.yml
+
+# 5. Import Grafana dashboards
+grafana-cli admin reset-admin-password admin
+# Import deploy/grafana/*.json via UI
+
+# 6. Start real-time dashboard (optional)
+python -m apps.metrics_dashboard --port 8080
+
+# 7. View metrics
+curl http://localhost:9090/metrics
+open http://localhost:3000  # Grafana
+open http://localhost:8080  # Real-time dashboard
+```
+
+---
+
+## Dependencies Summary
+
+```
+Phase 8 (Execution Layer) ✅
+    └─> Phase 9.0 (Metrics Contracts)
+            └─> 9.1 (Prometheus Exporter)
+                    └─> 9.2 (Service Instrumentation)
+                            └─> 9.3 (Grafana Dashboards)
+                                    └─> 9.4 (Metric Aggregator)
+                                            └─> 9.5 (Performance Attribution)
+                                                    └─> 9.6 (Real-Time Dashboard)
+                                                            └─> 9.7 (Metric Alerts)
+                                                                    └─> 9.8 (Metrics Retention)
+                                                                            └─> 9.9 (Telemetry Docs)
+```
+
+Each task builds on the previous, maintaining clean separation of concerns and architectural integrity.
+
+---
+
+## Phase 10 — Live Trade Controller 📋
+
+**Purpose:** Implement unified CLI for managing all trading services with config hot-reload and session journaling.
+
+**Current Status:** Phase 9 complete — Metrics & Telemetry fully operational
+**Next Phase:** Phase 11 — Monitoring & Alerts
+
+---
+
+### Phase 10.0 — Controller Contracts 📋
+**Status:** Planned
+**Dependencies:** 9.9 (Telemetry Documentation)
+**Task:** Define service control contracts and session tracking
+
+**Contracts:**
+```python
+@dataclass(frozen=True)
+class ServiceStatus:
+    """Status of a single service."""
+    service_name: str
+    status: Literal["running", "stopped", "starting", "stopping", "error"]
+    pid: int | None
+    uptime_seconds: int
+    last_error: str | None
+    timestamp_ns: int
+
+@dataclass(frozen=True)
+class SessionSnapshot:
+    """Trading session metadata."""
+    session_id: str
+    start_ts_ns: int
+    end_ts_ns: int | None
+    services: list[str]  # Service names in session
+    config_hash: str  # SHA256 of config files
+    status: Literal["active", "stopped", "error"]
+
+@dataclass(frozen=True)
+class ControlCommand:
+    """Command to control services."""
+    command: Literal["start", "stop", "restart", "reload", "status"]
+    service_names: list[str]  # Empty list = all services
+    session_id: str
+    timestamp_ns: int
+```
+
+**Files:**
+- `controller/contracts.py` (80 LOC)
+- `tests/test_controller_contracts.py`
+
+**Acceptance:**
+- All contracts immutable and typed
+- All timestamps use `*_ns` suffix
+- Serializable to/from dict
+- ServiceStatus includes PID tracking
+- SessionSnapshot tracks config hash for reload detection
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.1 — Service Registry 📋
+**Status:** Planned
+**Dependencies:** 10.0 (Controller Contracts)
+**Task:** Implement service discovery and registration
+
+**Behavior:**
+- Auto-discover services in `apps/` directory
+- Register service metadata (name, entry point, dependencies)
+- Support service dependency ordering (start risk_engine before broker)
+- Validate service existence before operations
+- Support service groups (e.g., "live", "paper", "backtest")
+
+**API:**
+```python
+class ServiceRegistry:
+    def __init__(self, apps_dir: Path = Path("apps")): ...
+
+    def discover_services(self) -> dict[str, ServiceMetadata]:
+        """Discover all services in apps/ directory.
+
+        Returns:
+            Dict mapping service name to metadata
+        """
+        pass
+
+    def get_service(self, name: str) -> ServiceMetadata:
+        """Get service metadata by name.
+
+        Raises:
+            KeyError: If service not found
+        """
+        pass
+
+    def get_start_order(
+        self,
+        service_names: list[str]
+    ) -> list[str]:
+        """Get topologically sorted start order based on dependencies.
+
+        Returns:
+            List of service names in start order
+        """
+        pass
+
+    def get_service_group(
+        self,
+        group: Literal["live", "paper", "backtest", "all"]
+    ) -> list[str]:
+        """Get service names in group.
+
+        Returns:
+            List of service names
+        """
+        pass
+```
+
+**Service Groups:**
+```yaml
+groups:
+  live:
+    - md_ingest
+    - risk_engine
+    - broker_binanceus
+    - portfolio_manager
+    - metric_aggregator
+
+  paper:
+    - md_ingest
+    - risk_engine
+    - paper_trader
+    - portfolio_manager
+    - metric_aggregator
+
+  backtest:
+    - []  # No persistent services for backtest
+```
+
+**Files:**
+- `controller/registry.py` (150 LOC)
+- `controller/metadata.py` (ServiceMetadata dataclass, 50 LOC)
+- `tests/test_service_registry.py`
+
+**Acceptance:**
+- Discovers all services in apps/ directory
+- Correctly orders services by dependencies
+- Validates service existence
+- Service groups defined and retrievable
+- Handles missing services gracefully (KeyError)
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.2 — Process Manager 📋
+**Status:** Planned
+**Dependencies:** 10.1 (Service Registry)
+**Task:** Manage service process lifecycle (start/stop/restart)
+
+**Behavior:**
+- Start services as background processes
+- **Safety: Check kill-switch before starting live services** (respect Phase 2 protections)
+- **Safety: Require NJORD_ENABLE_LIVE=1 env var for live broker/trading services**
+- Track PIDs and monitor process health
+- Stop services gracefully (SIGTERM, then SIGKILL after timeout)
+- Restart crashed services (optional auto-restart)
+- Capture stdout/stderr to log files
+- Environment variable injection
+
+**API:**
+```python
+class ProcessManager:
+    def __init__(
+        self,
+        registry: ServiceRegistry,
+        log_dir: Path = Path("var/log/njord")
+    ): ...
+
+    async def start_service(
+        self,
+        service_name: str,
+        config_root: Path = Path(".")
+    ) -> ServiceStatus:
+        """Start a service process.
+
+        Returns:
+            ServiceStatus with PID and status
+        """
+        pass
+
+    async def stop_service(
+        self,
+        service_name: str,
+        timeout_seconds: int = 10
+    ) -> ServiceStatus:
+        """Stop a service gracefully.
+
+        Args:
+            timeout_seconds: Wait for SIGTERM, then SIGKILL
+
+        Returns:
+            ServiceStatus after stopping
+        """
+        pass
+
+    async def restart_service(
+        self,
+        service_name: str
+    ) -> ServiceStatus:
+        """Restart a service (stop + start).
+
+        Returns:
+            ServiceStatus after restart
+        """
+        pass
+
+    def get_status(
+        self,
+        service_name: str
+    ) -> ServiceStatus:
+        """Get current service status.
+
+        Returns:
+            ServiceStatus with PID, uptime, status
+        """
+        pass
+
+    async def monitor_health(
+        self,
+        service_name: str,
+        interval_seconds: int = 5
+    ) -> AsyncIterator[ServiceStatus]:
+        """Monitor service health continuously.
+
+        Yields:
+            ServiceStatus updates
+        """
+        pass
+```
+
+**Files:**
+- `controller/process.py` (250 LOC)
+- `tests/test_process_manager.py`
+
+**Acceptance:**
+- Starts services as background processes
+- **Safety: Checks kill-switch state before starting live services** (Phase 2 integration)
+- **Safety: Validates NJORD_ENABLE_LIVE=1 env var for live broker** (prevents accidental live trading)
+- Tracks PIDs correctly
+- Stops services gracefully (SIGTERM before SIGKILL)
+- Captures stdout/stderr to log files
+- Monitors process health (detects crashes)
+- Timeout enforcement on stop operations
+- Test includes process lifecycle (start/stop/restart)
+- Test includes kill-switch enforcement (refuses to start if tripped)
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.3 — Config Hot-Reload 📋
+**Status:** Planned
+**Dependencies:** 10.2 (Process Manager)
+**Task:** Implement configuration hot-reload without service restart
+
+**Behavior:**
+- Watch config files for changes
+  - **Use inotify if available (Linux), otherwise fall back to polling every 5 seconds**
+  - **Cross-platform: Detect platform and use appropriate method**
+- Compute config hash (SHA256) for change detection
+- Send reload signal to services (SIGHUP or Redis message)
+- Services reload config on signal (no restart)
+- Validate config before reload (reject invalid changes)
+- Journal config changes with timestamps
+
+**API:**
+```python
+class ConfigReloader:
+    def __init__(
+        self,
+        bus: BusProto,
+        config_root: Path = Path(".")
+    ): ...
+
+    async def watch_config(self) -> None:
+        """Watch config files for changes."""
+        pass
+
+    def compute_config_hash(
+        self,
+        config_files: list[Path]
+    ) -> str:
+        """Compute SHA256 hash of config files.
+
+        Returns:
+            Hex-encoded SHA256 hash
+        """
+        pass
+
+    async def reload_service_config(
+        self,
+        service_name: str
+    ) -> bool:
+        """Trigger config reload for service.
+
+        Returns:
+            True if reload successful
+        """
+        pass
+
+    def validate_config(
+        self,
+        config_path: Path
+    ) -> tuple[bool, str | None]:
+        """Validate config file before reload.
+
+        Returns:
+            (valid, error_message)
+        """
+        pass
+```
+
+**Reload Mechanism:**
+```python
+# Option 1: SIGHUP signal
+os.kill(pid, signal.SIGHUP)
+
+# Option 2: Redis pub/sub (preferred for cross-host)
+await bus.publish_json("controller.reload", {"service": service_name})
+
+# Services listen for reload:
+async for msg in bus.subscribe("controller.reload"):
+    if msg["service"] == self.service_name:
+        self.config = load_config()
+        logger.info("config_reloaded")
+```
+
+**Files:**
+- `controller/reload.py` (180 LOC)
+- Update `apps/*/main.py` to handle reload signal (+20 LOC each)
+- `tests/test_config_reload.py`
+
+**Acceptance:**
+- Detects config file changes (inotify on Linux, polling fallback for cross-platform)
+- **Fallback mechanism tested: works on systems without inotify**
+- Computes config hash correctly (SHA256)
+- Sends reload signal to services (Redis pub/sub preferred)
+- Services reload config without restart
+- Config validation prevents invalid reloads
+- Config changes journaled with timestamps
+- Test includes reload simulation
+- Test includes polling fallback path
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.4 — Session Manager 📋
+**Status:** Planned
+**Dependencies:** 10.3 (Config Hot-Reload)
+**Task:** Track trading sessions and journal lifecycle events
+
+**Behavior:**
+- Create session on controller start
+- Assign unique session_id (UUID)
+- Journal session events (start, stop, config_reload, error)
+- Track session metadata (config hash, services, uptime)
+- Persist sessions to journal for audit
+- Support session queries (current, historical)
+
+**API:**
+```python
+class SessionManager:
+    def __init__(
+        self,
+        journal_dir: Path = Path("var/log/njord")
+    ): ...
+
+    def create_session(
+        self,
+        services: list[str],
+        config_hash: str
+    ) -> SessionSnapshot:
+        """Create new trading session.
+
+        Returns:
+            SessionSnapshot with session_id
+        """
+        pass
+
+    def end_session(
+        self,
+        session_id: str
+    ) -> SessionSnapshot:
+        """End trading session.
+
+        Returns:
+            SessionSnapshot with end_ts_ns
+        """
+        pass
+
+    def get_current_session(self) -> SessionSnapshot | None:
+        """Get current active session.
+
+        Returns:
+            SessionSnapshot or None if no active session
+        """
+        pass
+
+    def get_session_history(
+        self,
+        limit: int = 10
+    ) -> list[SessionSnapshot]:
+        """Get recent session history.
+
+        Returns:
+            List of SessionSnapshots (newest first)
+        """
+        pass
+
+    def journal_event(
+        self,
+        session_id: str,
+        event_type: str,
+        details: dict[str, Any]
+    ) -> None:
+        """Journal session lifecycle event."""
+        pass
+```
+
+**Session Journal Format (NDJSON):**
+```json
+{"session_id":"a1b2c3","event":"session_start","ts_ns":1234567890,"services":["risk_engine","paper_trader"],"config_hash":"abc123"}
+{"session_id":"a1b2c3","event":"config_reload","ts_ns":1234567900,"config_hash":"def456"}
+{"session_id":"a1b2c3","event":"service_crashed","ts_ns":1234567910,"service":"paper_trader","error":"connection lost"}
+{"session_id":"a1b2c3","event":"session_end","ts_ns":1234567920}
+```
+
+**Files:**
+- `controller/session.py` (150 LOC)
+- `tests/test_session_manager.py`
+
+**Acceptance:**
+- Creates unique session IDs (UUID)
+- Journals session lifecycle events (NDJSON)
+- Tracks config hash for each session
+- Retrieves current and historical sessions
+- Session end timestamp recorded correctly
+- Test includes session lifecycle (create/end/query)
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.5 — Log Aggregation 📋
+**Status:** Planned
+**Dependencies:** 10.4 (Session Manager)
+**Task:** Aggregate and tail logs from multiple services
+
+**Behavior:**
+- Read logs from all service log files
+- Support log tailing (--follow)
+- Filter logs by service, level, time range
+- Merge logs by timestamp (chronological order)
+- Colorize by service/level
+- Support log search (grep-like)
+
+**API:**
+```python
+class LogAggregator:
+    def __init__(
+        self,
+        log_dir: Path = Path("var/log/njord")
+    ): ...
+
+    def read_logs(
+        self,
+        service_names: list[str] | None = None,
+        start_ts_ns: int | None = None,
+        end_ts_ns: int | None = None,
+        level: str | None = None,
+        limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Read logs with filters.
+
+        Returns:
+            List of log entries (NDJSON parsed)
+        """
+        pass
+
+    async def tail_logs(
+        self,
+        service_names: list[str] | None = None,
+        level: str | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Tail logs continuously.
+
+        Yields:
+            Log entries as they arrive
+        """
+        pass
+
+    def search_logs(
+        self,
+        pattern: str,
+        service_names: list[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """Search logs by pattern.
+
+        Returns:
+            Matching log entries
+        """
+        pass
+
+    def merge_by_timestamp(
+        self,
+        log_entries: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Merge and sort logs by timestamp.
+
+        Returns:
+            Chronologically ordered log entries
+        """
+        pass
+```
+
+**Files:**
+- `controller/logs.py` (200 LOC)
+- `tests/test_log_aggregator.py`
+
+**Acceptance:**
+- Reads logs from service log files (NDJSON)
+- Merges logs by timestamp (chronological)
+- Tail mode works (--follow)
+- Filters by service, level, time range
+- Search functionality works (regex)
+- Colorized output by service/level (TTY detection)
+- Test includes log aggregation scenarios
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.6 — CLI Framework 📋
+**Status:** Planned
+**Dependencies:** 10.2 (Process Manager), 10.3 (Config Hot-Reload), 10.4 (Session Manager), 10.5 (Log Aggregation)
+**Task:** Implement `njord-ctl` unified CLI tool
+
+**Behavior:**
+- Single entrypoint: `njord-ctl <command> [options]`
+- Commands: start, stop, restart, reload, status, logs, session
+- Support service selection (--service, --group, --all)
+- Colorized output (optional, detect TTY)
+- JSON output mode (--json)
+- Dry-run mode (--dry-run)
+
+**CLI Commands:**
+```bash
+# Start services
+njord-ctl start --group live
+njord-ctl start --service risk_engine,paper_trader
+njord-ctl start --all
+
+# Stop services
+njord-ctl stop --group live
+njord-ctl stop --service risk_engine
+njord-ctl stop --all
+
+# Restart services
+njord-ctl restart --service paper_trader
+
+# Reload config (no restart)
+njord-ctl reload --all
+
+# Check status
+njord-ctl status
+njord-ctl status --service risk_engine --json
+
+# View logs
+njord-ctl logs --service risk_engine --follow --lines 100
+
+# Session management
+njord-ctl session current
+njord-ctl session history --limit 10
+```
+
+**API:**
+```python
+class NjordCLI:
+    def __init__(
+        self,
+        config_root: Path = Path(".")
+    ): ...
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        """Build argument parser with all commands."""
+        pass
+
+    async def cmd_start(self, args: argparse.Namespace) -> int:
+        """Handle start command."""
+        pass
+
+    async def cmd_stop(self, args: argparse.Namespace) -> int:
+        """Handle stop command."""
+        pass
+
+    async def cmd_status(self, args: argparse.Namespace) -> int:
+        """Handle status command."""
+        pass
+
+    async def cmd_reload(self, args: argparse.Namespace) -> int:
+        """Handle reload command."""
+        pass
+
+    async def cmd_logs(self, args: argparse.Namespace) -> int:
+        """Handle logs command."""
+        pass
+
+    async def cmd_session(self, args: argparse.Namespace) -> int:
+        """Handle session command."""
+        pass
+
+    def format_output(
+        self,
+        data: Any,
+        json_mode: bool = False
+    ) -> str:
+        """Format output (JSON or human-readable)."""
+        pass
+```
+
+**Files:**
+- `scripts/njord_ctl.py` (300 LOC)
+- `controller/cli.py` (CLI helper utilities, 100 LOC)
+- `tests/test_njord_ctl.py`
+
+**Acceptance:**
+- All commands implemented (start/stop/restart/reload/status/logs/session)
+- Service selection works (--service, --group, --all)
+- JSON output mode functional (--json)
+- Colorized output when TTY detected
+- Dry-run mode shows actions without executing (--dry-run)
+- Error handling with clear messages
+- Logs command integrates with LogAggregator (10.5)
+- Test includes all CLI commands
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.7 — Service Health Checks 📋
+**Status:** Planned
+**Dependencies:** 10.2 (Process Manager), 10.6 (CLI Framework)
+**Task:** Implement health check probes for services
+
+**Behavior:**
+- Define health check endpoints per service
+- Support HTTP health checks (GET /health)
+- Support Redis ping checks
+- Aggregate health status across services
+- Auto-restart unhealthy services (optional)
+- Expose overall system health
+
+**API:**
+```python
+class HealthChecker:
+    def __init__(
+        self,
+        process_manager: ProcessManager,
+        bus: BusProto
+    ): ...
+
+    async def check_service_health(
+        self,
+        service_name: str
+    ) -> tuple[bool, str]:
+        """Check service health.
+
+        Returns:
+            (healthy, status_message)
+        """
+        pass
+
+    async def check_http_endpoint(
+        self,
+        url: str,
+        timeout_seconds: int = 5
+    ) -> bool:
+        """Check HTTP health endpoint.
+
+        Returns:
+            True if endpoint returns 200
+        """
+        pass
+
+    async def check_redis_connectivity(
+        self,
+        redis_url: str
+    ) -> bool:
+        """Check Redis connectivity.
+
+        Returns:
+            True if Redis ping succeeds
+        """
+        pass
+
+    async def monitor_all_services(
+        self,
+        interval_seconds: int = 30
+    ) -> AsyncIterator[dict[str, bool]]:
+        """Monitor all services continuously.
+
+        Yields:
+            Dict mapping service name to health status
+        """
+        pass
+```
+
+**Health Check Definitions:**
+```yaml
+health_checks:
+  risk_engine:
+    type: redis
+    interval: 30
+
+  paper_trader:
+    type: redis
+    interval: 30
+
+  metric_aggregator:
+    type: http
+    url: http://localhost:9090/health
+    interval: 30
+
+  metrics_dashboard:
+    type: http
+    url: http://localhost:8080/health
+    interval: 60
+```
+
+**Files:**
+- `controller/health.py` (180 LOC)
+- `config/health_checks.yaml` (health check definitions)
+- Update services with `/health` endpoints (+20 LOC each)
+- `tests/test_health_checker.py`
+
+**Acceptance:**
+- HTTP health checks functional (GET /health → 200)
+- Redis connectivity checks functional (ping)
+- Aggregates health status across services
+- Monitoring loop runs continuously
+- Auto-restart on unhealthy service (configurable)
+- Test includes health check scenarios (healthy/unhealthy)
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.8 — Controller Service 📋
+**Status:** Planned
+**Dependencies:** 10.2 (Process Manager), 10.4 (Session Manager), 10.7 (Service Health Checks)
+**Task:** Long-running controller daemon for session management
+
+**Behavior:**
+- Run as persistent daemon (background process)
+- Manage session lifecycle automatically
+- Monitor service health continuously
+- Auto-restart crashed services (configurable)
+- Expose control API (HTTP or Unix socket)
+- Journal controller events
+
+**API:**
+```python
+class ControllerDaemon:
+    def __init__(
+        self,
+        config: Config,
+        session_manager: SessionManager,
+        process_manager: ProcessManager,
+        health_checker: HealthChecker
+    ): ...
+
+    async def start(self) -> None:
+        """Start controller daemon."""
+        pass
+
+    async def run(self) -> None:
+        """Main daemon loop."""
+        pass
+
+    async def handle_service_crash(
+        self,
+        service_name: str
+    ) -> None:
+        """Handle service crash (auto-restart if enabled)."""
+        pass
+
+    async def expose_control_api(
+        self,
+        port: int = 9091,
+        bind_host: str = "127.0.0.1"
+    ) -> None:
+        """Expose HTTP control API.
+
+        Security:
+            - Default bind to localhost only (127.0.0.1)
+            - Require Bearer token auth for all endpoints
+            - Token from env var NJORD_CONTROLLER_TOKEN
+            - Reject requests without valid token (401 Unauthorized)
+
+        Endpoints:
+            GET /status (requires auth)
+            POST /start (requires auth)
+            POST /stop (requires auth)
+            POST /reload (requires auth)
+        """
+        pass
+```
+
+**Daemon Features:**
+- Runs in background (daemonize or systemd)
+- Monitors all services (health checks)
+- Auto-restart on crash (configurable per service)
+- **Exposes HTTP API for remote control (localhost-only by default, token auth required)**
+- **Security: Bearer token authentication (NJORD_CONTROLLER_TOKEN env var)**
+- Graceful shutdown (SIGTERM handler)
+
+**Files:**
+- `apps/controller/main.py` (200 LOC)
+- `controller/daemon.py` (150 LOC)
+- `tests/test_controller_daemon.py`
+
+**Acceptance:**
+- Daemon runs in background
+- Monitors service health continuously
+- Auto-restarts crashed services (configurable)
+- HTTP control API functional (start/stop/status/reload)
+- **Security: API binds to localhost only by default** (127.0.0.1)
+- **Security: Bearer token authentication enforced** (NJORD_CONTROLLER_TOKEN)
+- **Security: Rejects requests without valid token (401 Unauthorized)**
+- Graceful shutdown on SIGTERM
+- Journals controller events (NDJSON)
+- Test includes daemon lifecycle
+- Test includes auth enforcement (valid/invalid token scenarios)
+- `make fmt lint type test` green
+
+---
+
+### Phase 10.9 — Controller Documentation 📋
+**Status:** Planned
+**Dependencies:** 10.8 (Controller Service)
+**Task:** Document controller system and operational procedures
+
+**Deliverables:**
+
+**1. CLI Reference**
+- Complete command documentation (`njord-ctl --help` output)
+- Command examples for common tasks
+- Service group definitions
+- Configuration options
+
+**2. Session Management Guide**
+- Session lifecycle explanation
+- Session journaling format
+- Session queries and history
+- Config hot-reload procedures
+
+**3. Operations Runbook**
+- Starting/stopping services
+- Monitoring service health
+- Handling crashed services
+- Log aggregation and search
+- Troubleshooting common issues
+
+**4. API Documentation**
+- Controller HTTP API endpoints
+- Health check probe definitions
+- Service registry format
+- Process manager usage
+
+**Files:**
+- `docs/controller/cli_reference.md`
+- `docs/controller/session_management.md`
+- `docs/controller/operations_runbook.md`
+- `docs/controller/api_reference.md`
+- `tests/test_controller_docs.py` (validate links, code examples)
+
+**Acceptance:**
+- CLI reference complete (all commands documented)
+- Session management guide tested (follow procedures)
+- Operations runbook covers common scenarios
+- API docs include working code examples
+- All markdown links valid
+- Code examples in docs execute without errors
+- `make fmt lint type test` green
+
+---
+
+**Phase 10 Acceptance Criteria:**
+- [ ] All 10 tasks completed (10.0-10.9)
+- [ ] `make fmt lint type test` green
+- [ ] `njord-ctl` CLI functional with all commands
+- [ ] Services start/stop/restart via controller
+- [ ] Config hot-reload works without service restart
+- [ ] Session journaling tracks all lifecycle events
+- [ ] Health checks monitor all services
+- [ ] Log aggregation merges and tails logs correctly
+- [ ] Controller daemon runs as persistent service
+- [ ] Documentation complete and verified
+- [ ] No new runtime dependencies (stdlib + existing stack only)
+- [ ] All timestamps use `*_ns` suffix
+- [ ] Graceful shutdown on SIGTERM (all services)
+
+---
+
+## Integration with Existing System
+
+### Controller Flow
+```
+njord-ctl start --group live
+    ↓
+ServiceRegistry → get_service_group("live")
+    ↓
+ProcessManager → start_service(each service)
+    ↓
+SessionManager → create_session(services, config_hash)
+    ↓
+HealthChecker → monitor_all_services()
+    ↓
+Services Running (risk_engine, broker, etc.)
+    ↓
+ConfigReloader → watch_config() → reload on change
+    ↓
+SessionManager → journal_event("config_reload")
+    ↓
+njord-ctl stop --all
+    ↓
+ProcessManager → stop_service(each service, SIGTERM)
+    ↓
+SessionManager → end_session(session_id)
+```
+
+### Example Controller Session
+```bash
+# 1. Start controller daemon
+njord-ctl daemon start
+
+# 2. Start live trading services
+njord-ctl start --group live
+
+# 3. Check status
+njord-ctl status
+# Output:
+# SERVICE           STATUS    PID     UPTIME
+# md_ingest         running   1234    00:15:32
+# risk_engine       running   1235    00:15:31
+# broker_binanceus  running   1236    00:15:30
+# portfolio_manager running   1237    00:15:29
+# metric_aggregator running   1238    00:15:28
+
+# 4. Reload config (no restart)
+njord-ctl reload --all
+
+# 5. Tail logs
+njord-ctl logs --service risk_engine --follow
+
+# 6. Check session
+njord-ctl session current
+# Output:
+# SESSION_ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+# STARTED:    2025-10-01 14:30:00 UTC
+# UPTIME:     01:23:45
+# SERVICES:   5 running
+# CONFIG:     abc123def456 (no changes)
+
+# 7. Stop all services
+njord-ctl stop --all
+
+# 8. Stop controller daemon
+njord-ctl daemon stop
+```
+
+---
+
+## Dependencies Summary
+
+```
+Phase 9 (Metrics & Telemetry) ✅
+    └─> Phase 10.0 (Controller Contracts)
+            └─> 10.1 (Service Registry)
+                    └─> 10.2 (Process Manager) ━━━━┓
+                            └─> 10.3 (Config Hot-Reload) ━━┓
+                                    └─> 10.4 (Session Manager) ━┓
+                                            └─> 10.5 (Log Aggregation) ━┓
+                                                    │
+                                                    └─> 10.6 (CLI Framework) ⭐
+                                                            │  [Multi-deps: 10.2, 10.3, 10.4, 10.5]
+                                                            │
+                                                            └─> 10.7 (Service Health Checks)
+                                                                    │  [Also depends: 10.2]
+                                                                    │
+                                                                    └─> 10.8 (Controller Service)
+                                                                            │  [Also depends: 10.2, 10.4]
+                                                                            │
+                                                                            └─> 10.9 (Controller Docs)
+```
+
+**Dependency Notes:**
+- **10.5 (Log Aggregation)** reordered before CLI to satisfy `logs` command dependency
+- **10.6 (CLI Framework)** has explicit multi-dependencies on 10.2, 10.3, 10.4, 10.5
+- **10.7 (Health Checks)** also depends on 10.2 (ProcessManager for monitoring)
+- **10.8 (Controller Service)** also depends on 10.2 (ProcessManager), 10.4 (SessionManager)
+
+Each task builds on the previous, maintaining clean separation of concerns and architectural integrity.
+
+---
+
+## Phases 11-16 (Outline Only)
+
 **Phase 11:** Monitoring & Alerts (Slack/Email)
 **Phase 12:** Compliance & Audit (immutable logs)
 **Phase 13:** Advanced Strategies (ML features, ensembles)
