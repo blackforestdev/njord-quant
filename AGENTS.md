@@ -15,7 +15,12 @@ This project maintains three levels of agent guidance:
 2. **[ROADMAP.md](./ROADMAP.md)** — Tactical task-level instructions for each phase/sub-phase
 3. **[CLAUDE.md](./CLAUDE.md)** — Claude Code entry point (references this file)
 
-**For task execution:** Always consult ROADMAP.md for detailed behavioral specifications, acceptance criteria, and file locations. AGENTS.md defines *how* we build; ROADMAP.md defines *what* to build next.
+**For task execution:** Always consult roadmap phase-specific files for detailed behavioral specifications, acceptance criteria, and file locations. AGENTS.md defines *how* we build; roadmap/phases/*.md files define *what* to build next.
+
+**Roadmap Structure (Updated 2025-10-02):**
+- `ROADMAP.md` — Lightweight index (~170 lines) with phase table
+- `roadmap/phases/phase-XX-name.md` — Detailed phase specifications (400-1500 lines each)
+- Token efficiency: Read index + specific phase = ~2000 lines vs 9000 (78% savings)
 
 ---
 

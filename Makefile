@@ -78,35 +78,57 @@ roadmap:
 		echo "Error: ROADMAP.md not found"; \
 		exit 1; \
 	fi
-	@echo "📋 Opening ROADMAP.md..."
+	@echo "📋 Opening ROADMAP.md (index)..."
 	@less ROADMAP.md
 
 status:
-	@if [ ! -f ROADMAP.md ]; then \
-		echo "Error: ROADMAP.md not found"; \
-		exit 1; \
-	fi
 	@PY_CMD=$$( [ -x "$(PY)" ] && echo "$(PY)" || command -v python3 || command -v python ); \
 	if [ -z "$$PY_CMD" ]; then \
 		echo "Error: Python interpreter not found"; \
 		exit 1; \
 	fi; \
-	$$PY_CMD scripts/show_status.py
+	$$PY_CMD scripts/roadmap_nav.py status
 
 next:
-	@if [ ! -f ROADMAP.md ]; then \
-		echo "Error: ROADMAP.md not found"; \
-		exit 1; \
-	fi
 	@PY_CMD=$$( [ -x "$(PY)" ] && echo "$(PY)" || command -v python3 || command -v python ); \
 	if [ -z "$$PY_CMD" ]; then \
 		echo "Error: Python interpreter not found"; \
 		exit 1; \
 	fi; \
-	$$PY_CMD scripts/show_next.py
+	$$PY_CMD scripts/roadmap_nav.py next
 	@echo ""
-	@echo "To implement: Review task in ROADMAP.md, then run:"
+	@echo "To implement: Review task in phase file, then run:"
 	@echo "  make fmt && make lint && make type && make test"
+
+phase-current:
+	@PY_CMD=$$( [ -x "$(PY)" ] && echo "$(PY)" || command -v python3 || command -v python ); \
+	if [ -z "$$PY_CMD" ]; then \
+		echo "Error: Python interpreter not found"; \
+		exit 1; \
+	fi; \
+	PHASE_NUM=$$($$PY_CMD -c "import sys; sys.path.insert(0, 'scripts'); from roadmap_nav import RoadmapNavigator; nav = RoadmapNavigator(); print(nav.get_current_phase_number() or '')"); \
+	if [ -z "$$PHASE_NUM" ]; then \
+		echo "Error: Could not determine current phase"; \
+		exit 1; \
+	fi; \
+	PHASE_FILE=$$(ls roadmap/phases/phase-$$(printf "%02d" $$PHASE_NUM)-*.md 2>/dev/null | head -1); \
+	if [ -z "$$PHASE_FILE" ]; then \
+		echo "Error: Phase file not found for phase $$PHASE_NUM"; \
+		exit 1; \
+	fi; \
+	less $$PHASE_FILE
+
+phase:
+	@if [ -z "$(NUM)" ]; then \
+		echo "Usage: make phase NUM=13"; \
+		exit 1; \
+	fi; \
+	PHASE_FILE=$$(ls roadmap/phases/phase-$$(printf "%02d" $(NUM))-*.md 2>/dev/null | head -1); \
+	if [ -z "$$PHASE_FILE" ]; then \
+		echo "Error: Phase $(NUM) not found"; \
+		exit 1; \
+	fi; \
+	less $$PHASE_FILE
 
 # Service runners
 run-md:

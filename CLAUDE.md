@@ -54,21 +54,28 @@ Never let strategies call broker directly.
 
 ## Task Instructions
 
-**📋 For detailed task specifications, see [ROADMAP.md](./ROADMAP.md)**
+**📋 For detailed task specifications, see roadmap phase-specific files:**
 
-ROADMAP.md contains:
-- Detailed behavioral specifications for each phase
+**Roadmap Structure (Updated 2025-10-02):**
+- `ROADMAP.md` — Lightweight index with phase table (~170 lines)
+- `roadmap/phases/phase-XX-name.md` — Detailed phase specifications (400-1500 lines each)
+
+Phase files contain:
+- Detailed behavioral specifications for each sub-phase
 - Explicit acceptance criteria
 - File locations and LOC estimates
 - Dependency chains between tasks
 - Status tracking (✅ Complete | 🚧 In Progress | 📋 Planned)
 
 **Example workflow:**
-1. Check ROADMAP.md for current phase (currently 3.8)
-2. Find next task with 📋 status
-3. Verify dependencies are ✅
-4. Follow task instructions exactly
-5. Update status to 🚧 when starting, ✅ when complete
+1. Read ROADMAP.md to identify current phase
+2. Open roadmap/phases/phase-XX-name.md for current phase
+3. Find next sub-phase with 📋 status
+4. Verify dependencies are ✅
+5. Follow task instructions exactly
+6. Update status to 🚧 when starting, ✅ when complete
+
+**Token Efficiency:** Index + phase file = ~2000 lines vs 9000 monolithic (78% savings)
 
 ---
 
