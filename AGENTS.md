@@ -169,10 +169,13 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Jupyter notebook integration (offline only)
 - **Dependencies:** pandas, pyarrow, matplotlib, jupyter (optional install group)
 
-### **Phase 8** — Execution Layer (IN PROGRESS)
-- Smart order router (TWAP, VWAP, iceberg)
-- Simulated slippage/fees
-- Exchange microstructure adapters
+### **Phase 8** — Execution Layer 📋
+- Phase 8.0: Execution foundations (BusProto, BaseExecutor, sync/async adapters)
+- Execution algorithms: TWAP, VWAP, Iceberg, POV
+- Slippage models (linear, square-root)
+- Smart order router with algorithm selection
+- Execution performance metrics
+- **Architecture:** All executors emit OrderIntent → Risk Engine → Broker (no bypass)
 
 ### **Phase 9** — Metrics & Telemetry
 - Prometheus metrics exporter

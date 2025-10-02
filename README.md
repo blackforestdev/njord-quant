@@ -37,7 +37,7 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 
 ## Documentation Map
 - [AGENTS.md](./AGENTS.md): Strategic SOPs, coding standards, and non-negotiable guardrails.
-- [ROADMAP.md](./ROADMAP.md): Phase-by-phase implementation tasks and acceptance criteria (current focus: Phase 6).
+- [ROADMAP.md](./ROADMAP.md): Phase-by-phase implementation tasks and acceptance criteria (current focus: Phase 8).
 - [CLAUDE.md](./CLAUDE.md): Claude Code entry point referencing AGENTS.md.
 - [docs/](./docs): Supplemental design notes and decision records (as available).
 
