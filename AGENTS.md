@@ -225,21 +225,69 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 
 ## Micro-Prompt Template (For Sub-Phase Tasks)
 
-**Note:** Detailed task specifications are maintained in [ROADMAP.md](./ROADMAP.md). Use this template for ad-hoc tasks not yet documented there.
+**Note:** Detailed task specifications are maintained in `roadmap/phases/phase-XX-name.md` files. This template defines the **standard structure** that all phase specifications follow. Code agents implementing a sub-phase should read the phase file and follow this structure.
 
-Use this template when prompting agents for specific tasks:
-...
+### Template Structure (For Roadmap Phase Files)
+
+When documenting sub-phase tasks in roadmap files, use this evolved template:
 
 ```markdown
-### Phase <N>.<M> — <Title>
+### Phase <N>.<M> — <Title> <status-emoji>
+**Status:** Planned | In Progress | Complete
+**Dependencies:** <N>.<M-1> (Previous Task Name)
+**Task:** <one-sentence summary>
 
-**Task:**
-<one-sentence summary>
+**Critical Architectural Requirements:** (if applicable)
+1. <Domain-specific constraint 1 (e.g., "No Risk Engine Bypass")>
+2. <Domain-specific constraint 2 (e.g., "Bus Protocol Layering")>
+3. <Timestamp conventions, data flow requirements, etc.>
+
+**Deliverables:** (if complex abstractions with reference implementations)
+
+#### 1. <Component Name>
+```python
+# Reference implementation showing key contracts/interfaces
+class ExampleContract:
+    """Docstring with warnings for dangerous operations.
+
+    WARNING: Document failure modes, usage constraints, safety requirements.
+    - Safe usage pattern 1
+    - Unsafe pattern that FAILS
+    - Context where this should NOT be used
+    """
+
+    def method_signature(self, args: Type) -> ReturnType:
+        """Method-level documentation."""
+        pass
+```
+
+#### 2. <Additional Components>
+...
+
+**API:** (alternative to Deliverables for simpler cases)
+```python
+class ImplementationClass:
+    def __init__(self, required_params: Type): ...
+
+    def primary_method(self, args: Type) -> ReturnType:
+        """Core functionality description.
+
+        Args:
+            args: Parameter documentation
+
+        Returns:
+            Return value documentation
+
+        Raises:
+            ErrorType: When this failure occurs
+        """
+        pass
+```
 
 **Requirements:**
-- <bullet 1>
-- <bullet 2>
-- …
+- <Functional requirement 1>
+- <Functional requirement 2>
+- <Data flow requirement (e.g., "Must emit OrderIntent, not call broker directly")>
 
 **Constraints:**
 - No new **runtime** dependencies (Phases 0-6, 8-16)
@@ -247,18 +295,181 @@ Use this template when prompting agents for specific tasks:
 - No network I/O in tests
 - Must stay deterministic
 - Keep diffs minimal (≤150 LOC, ≤4 files)
+- <Add phase-specific architectural constraints here>
 
-**Output:**
-Unified diff only. No prose.
+**Files:**
+- `path/to/file1.py` (description, ~LOC estimate)
+- `path/to/file2.py` (description, ~LOC estimate)
+- `tests/test_module.py`
 
-**After patch, verify:**
-```bash
-make fmt && make lint && make type && make test
+**Acceptance:**
+- <Behavioral assertion 1 (e.g., "Returns list[OrderIntent], NO broker calls")>
+- <Behavioral assertion 2 (e.g., "Slices scheduled at correct intervals")>
+- <Data integrity check (e.g., "Total quantity distributed evenly across slices")>
+- <Metadata requirement (e.g., "Each OrderIntent.meta includes execution_id")>
+- <Edge case handling (e.g., "Handles partial fills correctly")>
+- <Test scenario 1 (e.g., "Test includes partial fill scenario")>
+- <Test scenario 2 (e.g., "Test includes multiple replenishment cycles")>
+- **Round-trip verification (if applicable): "Test verifies DataStructureA → Transformation → DataStructureB recovery"**
+- **Critical path test: "Test verifies <architectural boundary> is enforced (e.g., no broker bypass)"**
+- `make fmt lint type test` green
 ```
 
-**Expected outcome:**
-All checks pass (green). If red, iterate until green.
+---
+
+### Code Agent Implementation Protocol
+
+When a user says **"Implement Phase X.Y — Sub-Phase Title"**, the code agent must:
+
+1. **Read Phase File:**
+   ```bash
+   # Find current phase from ROADMAP.md
+   cat ROADMAP.md | grep "**Current Phase:**"
+
+   # Read corresponding phase file
+   cat roadmap/phases/phase-XX-name.md
+   ```
+
+2. **Locate Sub-Phase Section:**
+   - Find `### Phase X.Y — Title` heading
+   - Extract all content until next `### Phase` or `##` heading
+
+3. **Parse and Execute:**
+   - **Status/Dependencies:** Verify dependencies are ✅ complete
+   - **Task:** Understand one-sentence objective
+   - **Critical Architectural Requirements:** Enforce as non-negotiable constraints
+   - **Deliverables/API:** Use as reference implementation guide
+   - **Requirements:** Implement all functional requirements
+   - **Constraints:** Enforce generic + phase-specific constraints
+   - **Files:** Create/modify listed files with estimated LOC
+   - **Acceptance:** Treat as executable test specification
+
+4. **Implementation Execution:**
+   ```python
+   # For each file in Files section:
+   #   - Create module structure
+   #   - Implement contracts from Deliverables/API
+   #   - Enforce Requirements and Constraints
+   #   - Add inline warnings for dangerous operations
+
+   # For test file:
+   #   - Create test class
+   #   - For each item in Acceptance section:
+   #       - Write test_<acceptance_item>() function
+   #       - Verify behavioral assertion
+   #       - Cover edge cases mentioned
+   #       - Implement round-trip verification if specified
+   ```
+
+5. **Verification Loop:**
+   ```bash
+   make fmt && make lint && make type && make test
+   # If red → fix errors → rerun until green
+   # If green → emit unified diff
+   ```
+
+6. **Output Format:**
+   - **Unified diff only** (no prose explanations unless debugging)
+   - Include file paths and line numbers
+   - Commit message following conventional commits
+
+---
+
+### Acceptance Criteria Specification Guidelines
+
+**Acceptance criteria must be executable test specifications.** Each acceptance item should map to one or more test assertions:
+
+#### Pattern 1: Behavioral Assertion
+```markdown
+**Acceptance:**
+- Returns list[OrderIntent], NO broker calls
 ```
+**Test Implementation:**
+```python
+def test_twap_returns_intents_no_broker_calls(mock_broker):
+    executor = TWAPExecutor(strategy_id="test")
+    intents = executor.plan_execution(algo)
+    assert isinstance(intents, list)
+    assert all(isinstance(i, OrderIntent) for i in intents)
+    mock_broker.place.assert_not_called()  # NO broker calls
+```
+
+#### Pattern 2: Edge Case Coverage
+```markdown
+**Acceptance:**
+- Test includes partial fill scenario
+```
+**Test Implementation:**
+```python
+def test_twap_handles_partial_fills():
+    executor = TWAPExecutor(strategy_id="test")
+    intents = executor.plan_execution(algo)
+    # Simulate partial fill on first slice
+    fills = simulate_fills(intents, fill_ratio=0.5)
+    report = executor.build_report(fills)
+    assert report.filled_quantity == algo.total_quantity * 0.5
+    assert report.status == "running"  # Not completed
+```
+
+#### Pattern 3: Round-Trip Verification
+```markdown
+**Acceptance:**
+- Test verifies OrderIntent.meta → FillEvent → ExecutionReport round-trip
+```
+**Test Implementation:**
+```python
+def test_execution_metadata_round_trip():
+    executor = TWAPExecutor(strategy_id="test")
+    intents = executor.plan_execution(algo)
+
+    # Extract metadata from intent
+    execution_id = intents[0].meta["execution_id"]
+    slice_id = intents[0].meta["slice_id"]
+
+    # Simulate fill with metadata
+    fill = FillEvent(
+        client_order_id=intents[0].intent_id,
+        execution_id=execution_id,  # Must recover from OrderIntent
+        ...
+    )
+
+    # Build report from fills
+    report = executor.build_report([fill])
+    assert report.execution_id == execution_id  # Round-trip verified
+```
+
+#### Pattern 4: Architectural Boundary Enforcement
+```markdown
+**Acceptance:**
+- **CRITICAL: Child OrderIntents must pack execution_id into OrderIntent.meta**
+- **Test verifies no direct broker calls**
+```
+**Test Implementation:**
+```python
+def test_executor_enforces_risk_engine_flow(mock_broker):
+    executor = TWAPExecutor(strategy_id="test")
+    intents = executor.plan_execution(algo)
+
+    # Verify metadata structure
+    for intent in intents:
+        assert "execution_id" in intent.meta
+        assert "slice_id" in intent.meta
+
+    # Verify no bypass
+    mock_broker.place.assert_not_called()
+```
+
+---
+
+### Example: Well-Formed Sub-Phase Specification
+
+See `roadmap/phases/phase-08-execution.md` Phase 8.2 (TWAP Algorithm) for reference implementation of this template with:
+- ✅ Dependencies tracking
+- ✅ Critical architectural requirements
+- ✅ API reference implementation with warnings
+- ✅ Explicit test scenario coverage
+- ✅ Round-trip verification requirements
+- ✅ Behavioral assertions mapped to tests
 
 ---
 
