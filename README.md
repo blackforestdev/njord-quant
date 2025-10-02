@@ -57,14 +57,15 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - [docs/](./docs): Supplemental design notes and decision records (as available).
 
 ## Current Phase
-**Phase 12 — Compliance & Audit** 📋
-- Immutable audit logger with checksum chaining (async append-only writes)
-- Service instrumentation for orders, fills, risk decisions, config changes, kill-switch events
-- Deterministic replay engine and order book reconstruction for verification workflows
-- Regulatory exports (FIX trade capture, CSV blotter, position reconciliation)
-- Audit service daemon (localhost-only, gated by `NJORD_ENABLE_AUDIT`) and compliance CLI
+**Phase 8 — Execution Layer** 📋
+- Execution layer foundations (BusProto, BaseExecutor, sync/async adapters)
+- TWAP/VWAP/Iceberg/POV execution algorithms
+- Slippage models (linear, square-root market impact)
+- Smart order router with algorithm selection logic
+- Execution simulator for backtest integration
+- Execution performance metrics (implementation shortfall, slippage tracking)
 
-See [ROADMAP.md](./ROADMAP.md) for detailed implementation specifications (Phases 8-12 fully specified).
+See [ROADMAP.md](./ROADMAP.md) for detailed implementation specifications. **Note:** Phases 8-13 are fully specified but not yet implemented. Implementation follows dependency order: 8 → 9 → 10 → 11 → 12 → 13.
 
 ## Project Structure
 ```text

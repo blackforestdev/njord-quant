@@ -4,7 +4,7 @@
 
 Implement a **robust, research-driven algorithmic trading framework** for cryptocurrency markets in **16 incremental phases**. Each phase delivers small, reviewable diffs (≤150 LOC / ≤4 files) that maintain 100% green guardrails: formatted, linted, typed, and tested.
 
-**Current Status:** Phase 12 — Compliance & Audit
+**Current Status:** Phase 8 — Execution Layer
 **Target:** Phase 16 — Production-ready autonomous trading system
 
 ## Documentation Hierarchy
@@ -167,23 +167,6 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - Controller daemon (persistent service, HTTP control API)
 
 ### **Phase 11** — Monitoring & Alerts 📋
-- Alert contracts, bus, and rule engine tied to metrics stream
-- Notification channels: log, Redis, webhook (email/Slack stubs)
-- Alert service daemon (localhost-only, `NJORD_ENABLE_ALERTS` gate)
-- Alert CLI for listing, testing, and acknowledging alerts
-- Documentation covering architecture, rules, runbooks
-
-### **Phase 12** — Compliance & Audit 📋 ← **CURRENT PHASE**
-- Immutable audit logger with checksum chaining (async, append-only)
-- Service instrumentation for audit hooks (orders, fills, risk, config, kill-switch)
-- Deterministic replay engine and order book reconstruction
-- Regulatory exports (FIX, trade blotter, reconciliation)
-- Audit service daemon (localhost-only, `NJORD_ENABLE_AUDIT` gate) + CLI & docs
-- Compliance documentation: architecture, audit trail, replay, regulatory guides
-- **No new runtime dependencies** (stdlib + existing stack only)
-- **Graceful shutdown:** SIGTERM handling for all services
-
-### **Phase 11** — Monitoring & Alerts 📋
 - Alert contracts (Alert, AlertRule, NotificationChannel)
 - Alert bus with routing, deduplication (Redis TTL), and rate limiting
 - Rule engine with metric evaluation and duration tracking
@@ -194,10 +177,15 @@ chore(mypy): exclude app __main__ entrypoints temporarily
 - **Security:** Env vars for secrets, localhost binding by default (127.0.0.1:9092)
 - **No runtime dependencies** (stdlib + existing stack only)
 
-### **Phase 12** — Compliance & Audit
-- Append-only audit logs (immutable)
-- Deterministic replay validation
-- Order book reconstruction
+### **Phase 12** — Compliance & Audit 📋
+- Immutable audit logger with checksum chaining (async, append-only)
+- Service instrumentation for audit hooks (orders, fills, risk, config, kill-switch)
+- Deterministic replay engine and order book reconstruction
+- Regulatory exports (FIX, trade blotter, reconciliation)
+- Audit service daemon (localhost-only, `NJORD_ENABLE_AUDIT` gate) + CLI & docs
+- Compliance documentation: architecture, audit trail, replay, regulatory guides
+- **No new runtime dependencies** (stdlib + existing stack only)
+- **Graceful shutdown:** SIGTERM handling for all services
 
 ### **Phase 13** — Advanced Strategy Toolkit
 - Factor models (momentum, mean reversion, carry)
