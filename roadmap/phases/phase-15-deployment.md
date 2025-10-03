@@ -112,19 +112,25 @@ WantedBy=multi-user.target
 - `deploy/systemd/njord-controller.service` (~65 lines)
 - `deploy/systemd/njord.target` (~20 lines)
 - `deploy/systemd/README.md` (Installation instructions, ~100 lines)
+- `scripts/validate_systemd_units.sh` (Syntax validation without systemd, ~80 lines)
+- `scripts/test_systemd_integration.sh` (Integration test, requires systemd, ~150 lines)
 
 **Acceptance:**
 - All service units include proper dependencies (After=, Requires=)
 - Restart policies configured correctly (Restart=on-failure, RestartSec, StartLimitBurst)
 - Resource limits enforced (MemoryLimit, CPUQuota, LimitNOFILE)
 - Security hardening applied (NoNewPrivileges, ProtectSystem, ReadWritePaths)
-- **Test verifies service starts correctly: systemctl --user start njord-risk-engine**
-- **Test verifies dependency ordering: risk-engine waits for redis**
-- **Test verifies restart policy: service restarts after simulated crash**
-- **Test verifies resource limits: MemoryLimit enforced (test with memory spike)**
+- **Unit file validation: scripts/validate_systemd_units.sh checks syntax (no systemd required)**
+- **Integration test (optional, requires systemd): scripts/test_systemd_integration.sh in privileged container**
+  - Verifies service starts: systemctl --user start njord-risk-engine
+  - Verifies dependency ordering: risk-engine waits for redis
+  - Verifies restart policy: service restarts after simulated crash
+  - Verifies resource limits: MemoryLimit enforced (test with memory spike)
 - Broker service includes ExecStartPre check for NJORD_ENABLE_LIVE guard
 - Documentation includes installation and verification steps
 - `make fmt lint type test` green (no code changes)
+
+**Note:** Systemd integration tests require privileged environment (Docker with systemd, VM, or bare metal). Not part of standard CI guardrails. Use scripts/test_systemd_integration.sh for deployment validation.
 
 ---
 
@@ -257,19 +263,24 @@ main "$@"
 - `deploy/uninstall.sh` (Removal script, ~100 lines)
 - `deploy/env.conf.example` (Environment template, ~80 lines)
 - `deploy/INSTALL.md` (Installation guide, ~200 lines)
-- `tests/test_install.sh` (Installation smoke test)
+- `scripts/validate_install.sh` (Installation validation without sudo, ~80 lines)
+- `tests/integration/test_install.sh` (Full install test in Docker, requires root)
 
 **Acceptance:**
-- Installation script creates user/group correctly
-- Application files copied to install directory
-- Virtualenv created and dependencies installed
-- Systemd units installed and daemon reloaded
-- Directories created with correct ownership
-- **Test verifies installation in Docker container (isolated test)**
-- **Test verifies uninstall script removes all artifacts**
-- **Test verifies configuration validation catches missing files**
+- Installation script syntax validated (bash -n install.sh)
+- Script validated with shellcheck (no warnings)
+- Installation logic reviewed for correct user/group/directory creation
+- Systemd unit installation paths correct
+- Configuration validation logic correct
+- **Validation test (no sudo): scripts/validate_install.sh checks script structure**
+- **Integration test (optional, requires root): tests/integration/test_install.sh in Docker**
+  - Verifies full installation in isolated container
+  - Verifies uninstall removes all artifacts
+  - Verifies configuration validation catches missing files
 - INSTALL.md includes step-by-step instructions with verification commands
 - `make fmt lint type test` green (shell scripts validated with shellcheck)
+
+**Note:** Full installation testing requires root privileges (Docker, VM, or test host). Not part of standard CI. Use tests/integration/test_install.sh for deployment validation.
 
 ---
 
@@ -374,10 +385,15 @@ class ConfigValidator:
 - ConfigValidator enforces schema correctly
 - Business rule validation catches invalid risk limits
 - **Test verifies schema validation rejects invalid config**
-- **Test verifies encryption/decryption workflow (SOPS integration)**
-- **Test verifies production config requires secrets_file**
+- **Integration test (optional, requires SOPS): tests/integration/test_sops_workflow.sh**
+  - Verifies encryption/decryption workflow
+  - Requires SOPS and age/GPG key setup
+  - Not part of standard CI
+- **Test verifies production config validation rules**
 - CONFIG.md documents all configuration parameters with defaults
 - `make fmt lint type test` green
+
+**Note:** SOPS encryption testing requires external dependencies (sops, age/GPG). Encryption workflow documented and validated manually. Standard tests verify config validation logic only.
 
 ---
 
@@ -510,15 +526,20 @@ njord_environment=production
 - `deploy/ansible/README.md` (Ansible usage guide, ~150 lines)
 
 **Acceptance:**
-- Playbook deploys to remote hosts successfully
-- Idempotent: running twice doesn't break deployment
-- Health checks verify services started
-- Configuration templating works (environment-specific values)
-- **Test verifies deployment in Vagrant/Docker environment**
-- **Test verifies idempotency: second run shows no changes**
-- **Test verifies rollback: revert to previous version**
+- Ansible playbook syntax validated (ansible-playbook --syntax-check)
+- YAML linting passes (yamllint)
+- Playbook structure follows Ansible best practices
+- Jinja2 templates render correctly (ansible-playbook --check)
+- **Integration test (optional, requires Ansible + VM/container):**
+  - tests/integration/test_ansible_deploy.sh
+  - Verifies deployment in Vagrant/Docker environment
+  - Verifies idempotency: second run shows no changes
+  - Verifies rollback procedure
+  - Requires Ansible, Vagrant/Docker, and target host setup
 - README.md includes quickstart and troubleshooting
 - `make fmt lint type test` green (YAML syntax validated)
+
+**Note:** Ansible deployment testing requires multi-host environment setup. Not part of standard CI. Playbook validated for syntax/structure only in CI. Full deployment testing performed on staging infrastructure.
 
 ---
 
@@ -730,19 +751,22 @@ class RedisHealthCheck(HealthCheck):
 - `core/health.py` (HealthCheckServer, HealthCheck base, ~180 LOC)
 - `core/health_checks.py` (RedisHealthCheck, DataFreshnessCheck, ~100 LOC)
 - Integration in all service __main__.py files (~10 LOC each)
+- `scripts/benchmark_health_checks.py` (Performance benchmarking, ~80 LOC)
 - `tests/test_health_checks.py`
 
 **Acceptance:**
 - HealthCheckServer exposes /health, /health/liveness, /health/readiness
 - Returns 200 when healthy, 503 when unhealthy
 - Liveness check detects process alive
-- Readiness check verifies Redis connectivity
+- Readiness check verifies Redis connectivity (mocked in tests)
 - **Test verifies health endpoint response format**
 - **Test verifies degraded state returns 503**
 - **Test verifies dependency failure detected (mock Redis down)**
-- **Performance test: health check responds in <1ms**
-- All services integrate health checks (verify in service startup logs)
+- **Benchmark (optional, not in CI): health check responds in <1ms on reference hardware**
+- All services integrate health checks (code review verification)
 - `make fmt lint type test` green
+
+**Note:** Performance benchmark (<1ms) is operational goal. Actual response time varies by hardware and load. Use scripts/benchmark_health_checks.py on target deployment hardware.
 
 ---
 
@@ -829,18 +853,25 @@ Sections:
 - `deploy/backup.sh` (Backup script, ~150 lines)
 - `deploy/restore.sh` (Restore script, ~200 lines)
 - `deploy/verify_backup.sh` (Backup integrity check, ~100 lines)
+- `scripts/test_backup_logic.sh` (Dry-run unit tests, ~100 lines)
+- `tests/integration/test_backup_restore.sh` (Integration test, requires filesystem, ~150 lines)
 - `docs/ops/RECOVERY.md` (Recovery guide, ~300 lines)
-- `tests/test_backup_restore.sh` (Backup/restore test)
 
 **Acceptance:**
-- Backup script captures logs, state, and config
-- Retention policy deletes old backups correctly
-- Restore script recovers files to correct locations
-- **Test verifies backup/restore round-trip: backup → restore → verify**
-- **Test verifies retention policy: old backups deleted after N days**
+- Backup script syntax validated (bash -n, shellcheck)
+- Script logic reviewed for correct tar/compression usage
+- Retention policy calculation verified (date math)
+- Restore script syntax validated
+- **Unit test: scripts/test_backup_logic.sh validates date calculations and tar commands (dry-run mode)**
+- **Integration test (optional, requires filesystem): tests/integration/test_backup_restore.sh**
+  - Verifies backup/restore round-trip: backup → restore → verify
+  - Verifies retention policy: old backups deleted after N days
+  - Requires write access to test directories
 - RECOVERY.md includes step-by-step restore procedures
-- Disaster recovery procedure tested (manual verification)
+- Disaster recovery procedure documented with manual validation checklist
 - `make fmt lint type test` green (shell scripts validated)
+
+**Note:** Backup/restore testing requires filesystem access and may create files. Integration tests run in isolated environment (not part of standard CI). Backup logic validated via dry-run unit tests.
 
 ---
 
@@ -917,35 +948,46 @@ Sections:
 - `docs/deployment/CHECKLIST.md` (~150 lines)
 - `docs/deployment/DOCKER.md` (Docker deployment, ~200 lines)
 - `docs/deployment/SECURITY.md` (Security hardening, ~250 lines)
+- `tests/integration/README.md` (Integration testing guide, ~200 lines)
 
 **Acceptance:**
 - DEPLOYMENT.md covers all installation methods
 - CHECKLIST.md provides step-by-step verification
 - DOCKER.md includes Dockerfile and docker-compose.yml examples
 - SECURITY.md covers hardening best practices
-- All documentation validated by deployment test
+- All code snippets syntax-checked (bash -n, docker build --dry-run)
+- **Manual validation: Deployment test performed on staging infrastructure**
+- **Documentation review checklist completed (accuracy, completeness, clarity)**
 - `make fmt lint type test` green (no code changes)
+
+**Note:** Full deployment validation requires staging/test infrastructure. Documentation validated for accuracy via code review and syntax checking. Deployment testing performed outside CI on dedicated infrastructure.
 
 ---
 
 **Phase 15 Acceptance Criteria:**
 - [ ] All 7 tasks completed (15.0-15.7)
 - [ ] `make fmt lint type test` green
-- [ ] Systemd units for all services with correct dependencies
-- [ ] Installation script deploys successfully to clean host
+- [ ] Systemd units validated (syntax, dependencies, security settings)
+- [ ] Installation script validated (syntax, logic review, shellcheck)
 - [ ] Configuration packaging supports dev/staging/prod environments
-- [ ] Ansible playbook (optional) deploys to remote hosts
+- [ ] Ansible playbook (optional) validated (syntax, YAML lint, best practices)
 - [ ] Operational runbook covers all common procedures
 - [ ] Health check endpoints implemented for all services
-- [ ] Backup/recovery procedures documented and tested
-- [ ] Deployment documentation comprehensive and validated
-- [ ] Security hardening applied:
+- [ ] Backup/recovery procedures documented and logic validated
+- [ ] Deployment documentation comprehensive (syntax-checked)
+- [ ] Security hardening specified in systemd units:
   - User isolation (njord user)
   - Capability restrictions (NoNewPrivileges)
-  - Read-only paths enforced
-  - Resource limits enforced
-- [ ] All scripts validated with shellcheck
-- [ ] Manual deployment test completed successfully
+  - Read-only paths enforced (ProtectSystem, ReadWritePaths)
+  - Resource limits enforced (MemoryLimit, CPUQuota)
+- [ ] All scripts validated with shellcheck (zero warnings)
+- [ ] Integration tests documented (see tests/integration/README.md):
+  - Systemd integration: scripts/test_systemd_integration.sh (requires systemd)
+  - Installation: tests/integration/test_install.sh (requires root)
+  - Ansible: tests/integration/test_ansible_deploy.sh (requires Ansible + hosts)
+  - Backup/restore: tests/integration/test_backup_restore.sh (requires filesystem)
+  - SOPS workflow: tests/integration/test_sops_workflow.sh (requires SOPS)
+- [ ] Manual deployment validation completed on staging infrastructure
 
 ---
 
