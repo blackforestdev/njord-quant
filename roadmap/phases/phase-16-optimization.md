@@ -7,6 +7,51 @@
 
 ---
 
+## 🎯 CI vs. Manual Validation Strategy
+
+Phase 16 distinguishes between **CI-enforced checks** and **optional manual benchmarks** to maintain practical development workflows:
+
+### ✅ CI-Enforced (Required for `make test`)
+- **Functional correctness:** All unit/integration tests pass
+- **Code quality:** fmt, lint, type checks pass
+- **Profiling functionality:** Scripts execute without errors (using stdlib tools)
+- **Test determinism:** Tests pass reliably with fixed seeds
+
+### 📊 Optional Benchmarks (Manual/Staging Only)
+- **Performance targets:** Event loop lag, throughput, memory reduction percentages
+- **Long-running tests:** 1-hour leak detection, 24-hour continuous runs
+- **Stress tests:** 2x load scenarios, 1000 consecutive runs
+- **Hardware-dependent:** Profiling with external tools (py-spy, memory_profiler)
+
+**Rationale:** Optimization is continuous; CI enforces correctness and code quality, while benchmarks guide iterative improvement without blocking PRs.
+
+### 🔧 Optional Profiling Dependencies
+Phase 16 introduces **optional dev-only profiling tools** that are NOT required for standard development:
+
+```toml
+# pyproject.toml
+[project.optional-dependencies]
+profiling = [
+    "py-spy>=0.3.14",
+    "memory-profiler>=0.61.0",
+    "vulture>=2.11",
+    "radon>=6.0.1",
+]
+```
+
+**Installation:**
+```bash
+# Standard development (no profiling tools)
+pip install -e .
+
+# With profiling tools (optional)
+pip install -e ".[profiling]"
+```
+
+**Script behavior:** All profiling scripts degrade gracefully if optional tools are unavailable, falling back to stdlib alternatives (cProfile, tracemalloc).
+
+---
+
 ### Phase 16.0 — Performance Profiling 📋
 **Status:** Planned
 **Dependencies:** 15.7 (Deployment Documentation)
@@ -26,22 +71,36 @@
 # scripts/profile_cpu.py
 """CPU profiling utility using cProfile and py-spy.
 
+IMPORTANT: This script uses stdlib cProfile by default and gracefully
+degrades if optional tools (py-spy) are not installed.
+
 Usage:
-    # Profile specific service
+    # Profile with stdlib cProfile (always available)
     python scripts/profile_cpu.py --service risk_engine --duration 60
 
-    # Generate flamegraph
-    py-spy record -o flamegraph.svg --pid <PID> --duration 60
+    # Generate flamegraph (requires: pip install -e ".[profiling]")
+    python scripts/profile_cpu.py --service risk_engine --flamegraph
 """
 
 import cProfile
 import pstats
+import sys
 from pathlib import Path
+
+# Optional: Try to import py-spy (graceful degradation)
+try:
+    import subprocess
+    HAS_PY_SPY = subprocess.run(
+        ["py-spy", "--version"], capture_output=True
+    ).returncode == 0
+except (ImportError, FileNotFoundError):
+    HAS_PY_SPY = False
 
 def profile_service(
     service_module: str,
     duration_seconds: int,
-    output_dir: Path = Path("var/profiling")
+    output_dir: Path = Path("var/profiling"),
+    generate_flamegraph: bool = False
 ) -> None:
     """Profile service for specified duration.
 
@@ -49,6 +108,7 @@ def profile_service(
         service_module: Module to profile (e.g., "apps.risk_engine")
         duration_seconds: Profiling duration
         output_dir: Output directory for profile data
+        generate_flamegraph: Generate flamegraph (requires py-spy)
 
     Generates:
         - profile.stats: cProfile statistics
@@ -57,6 +117,7 @@ def profile_service(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Always use stdlib cProfile (no external dependencies)
     profiler = cProfile.Profile()
     profiler.enable()
 
@@ -75,6 +136,18 @@ def profile_service(
     with open(output_dir / "profile.txt", "w") as f:
         stats.print_stats(20)  # Top 20 functions
 
+    # Optional: Generate flamegraph if py-spy available
+    if generate_flamegraph:
+        if HAS_PY_SPY:
+            # Generate flamegraph with py-spy
+            pass
+        else:
+            print(
+                "Warning: py-spy not found. Install with: "
+                "pip install -e '.[profiling]'",
+                file=sys.stderr
+            )
+
 def analyze_hotspots(stats_file: Path) -> list[dict[str, Any]]:
     """Analyze profile and identify hotspots.
 
@@ -92,18 +165,29 @@ def analyze_hotspots(stats_file: Path) -> list[dict[str, Any]]:
 #### 2. Memory Profiling Setup
 ```python
 # scripts/profile_memory.py
-"""Memory profiling utility using memory_profiler and tracemalloc.
+"""Memory profiling utility using stdlib tracemalloc.
+
+IMPORTANT: This script uses stdlib tracemalloc by default and optionally
+uses memory_profiler if available for enhanced profiling.
 
 Usage:
-    # Profile memory usage
+    # Profile with stdlib tracemalloc (always available)
     python scripts/profile_memory.py --service paper_trader --duration 60
 
-    # Track memory leaks
-    python scripts/profile_memory.py --service broker --leak-detection
+    # Enhanced profiling (requires: pip install -e ".[profiling]")
+    python scripts/profile_memory.py --service broker --enhanced
 """
 
 import tracemalloc
-from memory_profiler import profile
+from typing import Any
+
+# Optional: Try to import memory_profiler (graceful degradation)
+try:
+    from memory_profiler import profile as memory_profile
+    HAS_MEMORY_PROFILER = True
+except ImportError:
+    HAS_MEMORY_PROFILER = False
+    memory_profile = lambda f: f  # No-op decorator
 
 def profile_memory(
     service_module: str,
@@ -154,14 +238,20 @@ def profile_memory(
 - `tests/test_profiling.py`
 
 **Acceptance:**
-- CPU profiler identifies top 20 functions by cumulative time
-- Memory profiler tracks peak memory and top allocations
+- CPU profiler identifies top 20 functions by cumulative time (using stdlib cProfile)
+- Memory profiler tracks peak memory and top allocations (using stdlib tracemalloc)
 - Leak detection compares snapshots over time
-- **Test verifies profiling overhead <5% (compare with/without profiling)**
-- **Test verifies hotspot analysis identifies known bottleneck**
-- **Test verifies memory leak detection (inject artificial leak)**
+- **Test verifies profiling scripts execute without errors (graceful degradation if optional tools missing)**
+- **Test verifies hotspot analysis parses cProfile output correctly**
+- **Test verifies memory leak detection with synthetic leak (stdlib only)**
 - PROFILING.md includes interpretation guide for profile data
+- Scripts check for optional tools (py-spy, memory_profiler) and warn if unavailable
 - `make fmt lint type test` green
+
+**Optional Benchmarks (Manual Validation):**
+- ⚙️ Profiling overhead <5% (compare with/without profiling) — run `scripts/benchmark_profiling.py`
+- ⚙️ Flamegraph generation with py-spy (requires `pip install -e ".[profiling]"`)
+- ⚙️ Advanced memory profiling with memory_profiler (requires optional dependencies)
 
 ---
 
@@ -210,11 +300,14 @@ await self.bus.publish_batch(
 ```
 
 **Requirements:**
-- Identify and fix blocking operations in event loop
-- Implement batch operations for high-frequency events
+- Identify and fix blocking operations in event loop (code review + test verification)
+- Implement batch operations for high-frequency events (functional correctness)
+- Maintain correctness (no race conditions introduced, tested with deterministic scenarios)
+- Document optimization changes and expected performance improvements
+
+**Performance Targets (Measured on Staging):**
 - Reduce event loop lag to <1ms p99
 - Improve throughput by 20-50% for high-load scenarios
-- Maintain correctness (no race conditions introduced)
 
 **Constraints:**
 - No new runtime dependencies
@@ -228,13 +321,17 @@ await self.bus.publish_batch(
 - `tests/test_event_loop_perf.py` (Performance regression tests)
 
 **Acceptance:**
-- Blocking operations moved to thread pool (test verifies no blocking)
-- Batch publish operations implemented and tested
-- Event loop lag reduced to <1ms p99 (benchmark test)
-- **Performance test: 1000 events/sec throughput sustained**
-- **Test verifies no race conditions introduced (concurrent stress test)**
-- OPTIMIZATION_REPORT.md shows before/after latency percentiles
+- Blocking operations moved to thread pool (test verifies async execution, no actual blocking measured)
+- Batch publish operations implemented and tested (functional correctness only)
+- **Test verifies batch operations maintain ordering and delivery guarantees**
+- **Test verifies no race conditions with concurrent event publishing (deterministic with fixed seed)**
+- OPTIMIZATION_REPORT.md documents optimization changes and expected improvements
 - `make fmt lint type test` green
+
+**Optional Benchmarks (Manual Validation):**
+- ⚙️ Event loop lag <1ms p99 — run `scripts/benchmark_event_loop.py` on staging hardware
+- ⚙️ Throughput: 1000 events/sec sustained — run `scripts/benchmark_throughput.py --duration 60`
+- ⚙️ Before/after latency comparison — documented in OPTIMIZATION_REPORT.md with manual measurements
 
 ---
 
@@ -291,11 +388,14 @@ class OrderIntent:
 ```
 
 **Requirements:**
-- Fix all memory leaks identified in profiling
-- Replace unbounded data structures with bounded equivalents
-- Add slots to all hot-path dataclasses
+- Fix all memory leaks identified in profiling (tested with short-duration leak detection)
+- Replace unbounded data structures with bounded equivalents (code review + functional tests)
+- Add slots to hot-path dataclasses (code review + verification)
+- Implement backpressure for event streams (functional test)
+
+**Memory Targets (Measured on Staging):**
 - Reduce peak memory by 20-30%
-- Implement backpressure for event streams
+- No memory growth over 1-hour sustained load
 
 **Constraints:**
 - Backwards compatible (existing code continues to work)
@@ -309,13 +409,18 @@ class OrderIntent:
 - `tests/test_memory_limits.py` (Memory regression tests)
 
 **Acceptance:**
-- All identified memory leaks fixed (test with leak detector)
-- Unbounded data structures replaced with bounded equivalents
-- Dataclasses use slots (verify with sys.getsizeof)
-- **Memory test: Peak memory reduced by 20-30% (before/after benchmark)**
-- **Test verifies backpressure: event queue blocks when full**
-- **Test verifies no memory leaks over 1-hour run**
+- All identified memory leaks fixed (test with synthetic leak, short duration)
+- Unbounded data structures replaced with bounded equivalents (test with size limits)
+- Dataclasses use slots where appropriate (code review + spot check with sys.getsizeof)
+- **Test verifies backpressure: event queue blocks when full (functional test, <1s duration)**
+- **Test verifies bounded collections evict oldest items correctly**
+- **Test verifies no obvious leaks with tracemalloc over short run (<10s)**
 - `make fmt lint type test` green
+
+**Optional Benchmarks (Manual Validation):**
+- ⚙️ Peak memory reduced by 20-30% — run `scripts/benchmark_memory.py --before-after` on staging
+- ⚙️ No memory leaks over 1-hour run — run `scripts/check_memory_leaks.py --duration 3600` on staging
+- ⚙️ Memory usage under sustained load — documented in OPTIMIZATION_REPORT.md with manual measurements
 
 ---
 
@@ -447,13 +552,17 @@ pytest tests/ -n auto  # Use all CPU cores
 - `.coveragerc` (Coverage configuration, ~30 lines)
 
 **Acceptance:**
-- Test suite completes in ≤30 seconds (pytest duration report)
-- Test coverage ≥90% (pytest-cov report)
-- Zero flaky tests (100 consecutive runs all pass)
-- **Performance test: parallel tests 3-4x faster than sequential**
-- **Coverage test: all modules ≥85% coverage**
-- **Flakiness test: 1000 consecutive runs with random seeds all pass**
+- Test suite completes in ≤30 seconds (pytest duration report with standard test set)
+- Test coverage ≥90% branch coverage (pytest-cov report)
+- **Tests pass reliably with deterministic behavior (fixed seeds, no race conditions)**
+- **Coverage test: all modules ≥85% coverage (enforced in CI)**
+- **Parallel test execution works correctly (pytest-xdist, no shared state issues)**
 - `make fmt lint type test` green
+
+**Optional Benchmarks (Manual Validation):**
+- ⚙️ Zero flaky tests over 100 consecutive runs — run `scripts/check_flakiness.py --runs 100` on staging
+- ⚙️ Extreme flakiness check: 1000 runs with random seeds — run `scripts/check_flakiness.py --runs 1000 --random-seed` (separate from CI)
+- ⚙️ Parallel speedup: 3-4x faster than sequential — measure with `pytest --benchmark` on staging hardware
 
 ---
 
@@ -538,14 +647,19 @@ docs/api/
 - `mkdocs.yml` or `conf.py` (Documentation build config, ~100 lines)
 
 **Acceptance:**
-- All public APIs documented with docstrings
-- API reference auto-generated from docstrings
-- All examples are runnable (tested in CI)
-- **Documentation builds without errors (mkdocs build or sphinx-build)**
-- **All code snippets in docs are valid (doctest passes)**
-- **Search functionality works (test mkdocs search)**
-- Cross-references between docs are accurate
+- All public APIs documented with docstrings (100% coverage for public methods)
+- API reference structure defined (markdown files with examples)
+- All code examples validated with doctest
+- **Documentation markdown files are well-formed and cross-references are valid**
+- **All code snippets in docs are syntactically valid Python (lint check)**
+- Cross-references between docs are accurate (manual review + link checker)
 - `make fmt lint type test` green (no code changes)
+
+**Optional Enhancements (Manual Validation):**
+- ⚙️ Auto-generated HTML docs — build with `mkdocs build` or `sphinx-build` (requires optional doc tools)
+- ⚙️ Search functionality — requires mkdocs-material or sphinx (optional dependency)
+- ⚙️ Hosted documentation — deploy to GitHub Pages or Read the Docs (separate deployment step)
+- Note: Markdown source files are the primary deliverable; HTML generation is optional for enhanced presentation
 
 ---
 
@@ -748,43 +862,66 @@ Njord Quant trading system has completed all 16 development phases and passed co
 - `docs/validation/KNOWN_ISSUES.md` (Known issues and mitigations, ~200 lines)
 
 **Acceptance:**
-- All 6 validation categories complete with PASS
-- Production readiness report signed off by all stakeholders
+- All 6 validation categories documented with results
+- Production readiness report created (sign-off by stakeholders is organizational, not code-enforced)
 - Known limitations documented with mitigations
-- **Full system test: 24-hour continuous run with no failures**
-- **Stress test: System handles 2x expected load**
-- **Security audit: No critical or high-severity issues**
-- **Documentation review: External reviewer validates completeness**
+- **Functional validation: All phases 0-15 complete, all standard tests passing**
+- **Security validation: No secrets in codebase (git history clean), SOPS functional, kill-switch tested**
+- **Documentation validation: All required docs present and internally consistent**
 - `make fmt lint type test` green
+
+**Optional Validation (Manual/Staging Only):**
+- ⚙️ 24-hour continuous run — run `scripts/production_validation.py --stress-test 24h` on staging hardware
+- ⚙️ Stress test: 2x expected load — run `scripts/stress_test.py --multiplier 2` on staging
+- ⚙️ Security audit with external tools — run `scripts/security_scan.py --full` (requires optional security tools)
+- ⚙️ External documentation review — coordinate with operations team (organizational process)
+- ⚙️ Performance metrics validation — run all benchmark scripts and document results in PRODUCTION_READINESS.md
 
 ---
 
-**Phase 16 Acceptance Criteria:**
+**Phase 16 Acceptance Criteria (CI-Enforced):**
 - [ ] All 7 tasks completed (16.0-16.7)
-- [ ] `make fmt lint type test` green
-- [ ] Performance targets met:
-  - Event loop latency <1ms p99
-  - Test suite ≤30 seconds
-  - Memory reduced by 20-30%
-  - Throughput >1000 events/sec
-- [ ] Code quality improved:
-  - Dead code removed (0% unused)
+- [ ] `make fmt lint type test` green (all phases)
+- [ ] Profiling infrastructure operational:
+  - CPU/memory profiling scripts functional (stdlib-based)
+  - Graceful degradation without optional tools
+  - Profiling overhead tests pass
+- [ ] Code quality improvements:
+  - Dead code removed (vulture scan clean)
   - Duplicates consolidated
-  - Complexity ≤10 (all functions)
-  - Type hint coverage 100%
-  - Docstring coverage 100%
-- [ ] Test suite optimized:
-  - Coverage ≥90%
-  - Zero flaky tests
+  - Complexity ≤10 (radon check passes)
+  - Type hint coverage 100% (mypy --strict passes)
+  - Docstring coverage 100% for public APIs
+- [ ] Test suite standards:
+  - Coverage ≥90% branch coverage
+  - Tests deterministic (no flakiness in single run)
+  - Test suite ≤30 seconds
   - Parallel execution working
 - [ ] Documentation complete:
-  - API reference generated
+  - API documentation (markdown) comprehensive
   - Operator manual comprehensive
-  - All guides validated
-- [ ] Production validation passed:
-  - All 6 validation categories: ✅ PASS
-  - Sign-off report approved
+  - All guides present and validated
+- [ ] Production readiness documented:
+  - All 6 validation categories documented
+  - Known limitations and mitigations documented
+  - PRODUCTION_READINESS.md created
+
+**Phase 16 Optional Benchmarks (Manual/Staging):**
+- [ ] Performance targets (measured on staging hardware):
+  - Event loop latency <1ms p99
+  - Memory reduced by 20-30%
+  - Throughput >1000 events/sec
+- [ ] Long-running validation:
   - 24-hour continuous run successful
+  - 1-hour memory leak test clean
+  - Stress test: 2x load handled
+- [ ] Flakiness validation:
+  - 100 consecutive runs pass
+  - 1000 runs with random seeds (extreme check)
+- [ ] External validation:
+  - Security audit (external tools)
+  - Documentation review (operations team)
+  - Stakeholder sign-offs (organizational process)
 
 ---
 
@@ -856,15 +993,60 @@ Phase 15 (Deployment Framework) ✅
 
 ## Production Readiness Criteria
 
-**System is production-ready when:**
-1. ✅ All 16 phases complete
-2. ✅ All tests passing (100% green)
-3. ✅ Performance targets met (latency, throughput, memory)
-4. ✅ Security validation passed
-5. ✅ Documentation complete and validated
-6. ✅ Operational procedures tested
-7. ✅ Sign-off from all stakeholders
+**System is production-ready when (CI-Enforced):**
+1. ✅ All 16 phases complete with standard tests passing
+2. ✅ All guardrails green (`make fmt lint type test`)
+3. ✅ Code quality standards met (no dead code, complexity ≤10, 100% type hints)
+4. ✅ Security fundamentals validated (no secrets, SOPS working, kill-switch tested)
+5. ✅ Documentation complete and consistent
+6. ✅ Test coverage ≥90% with deterministic tests
 
-**Deployment Authorization:** Granted upon successful completion of Phase 16.7 Final Validation.
+**System is enterprise-ready when (Optional Validation):**
+1. ✅ Performance benchmarks met on staging hardware (latency, throughput, memory)
+2. ✅ Long-running validation successful (24-hour run, leak tests, stress tests)
+3. ✅ Flakiness validation passed (100+ consecutive runs)
+4. ✅ External security audit clean
+5. ✅ Operational procedures tested and documented
+6. ✅ Stakeholder sign-offs obtained (organizational process)
+
+**Deployment Authorization:**
+- **Production-ready:** Granted upon CI-enforced criteria (Phase 16.7 completion)
+- **Enterprise-ready:** Granted upon optional validation + stakeholder approval
+
+**Note:** The distinction allows teams to deploy to production with confidence based on rigorous automated checks, while pursuing enterprise-grade validation as a continuous improvement process.
+
+---
+
+## 📝 Summary for Code Agents
+
+**When implementing Phase 16, ensure:**
+
+1. **Dependencies:**
+   - All profiling scripts work with **stdlib only** (cProfile, tracemalloc)
+   - Optional tools (py-spy, memory_profiler, vulture, radon) go in `[project.optional-dependencies]` under `profiling` group
+   - Scripts degrade gracefully with warning messages if optional tools missing
+   - **No new runtime dependencies** for standard `pip install -e .`
+
+2. **Test Suite:**
+   - Standard `make test` enforces **functional correctness** only
+   - Performance benchmarks (latency, throughput, memory %) are **optional** and documented separately
+   - Long-running tests (1-hour, 24-hour) are **manual scripts** for staging, never in CI
+   - Flakiness checks (100/1000 runs) are **separate scripts** (`scripts/check_flakiness.py`), not in CI
+
+3. **Acceptance Criteria:**
+   - **CI-enforced:** Code quality, test coverage, deterministic behavior, script functionality
+   - **Optional benchmarks:** Performance targets, stress tests, long-running validation
+   - Mark optional items with ⚙️ symbol and reference to manual scripts
+
+4. **Documentation:**
+   - Markdown files are the primary deliverable
+   - HTML generation (mkdocs, sphinx) is **optional enhancement**
+   - All examples must be **valid Python** (tested with doctest)
+
+5. **Production Readiness:**
+   - **Production-ready:** All CI checks pass, documentation complete
+   - **Enterprise-ready:** Optional benchmarks validated, stakeholder sign-off (organizational)
+
+**Key Principle:** Optimization is iterative; CI enforces correctness and quality standards, while benchmarks guide continuous improvement without blocking development velocity.
 
 ---
