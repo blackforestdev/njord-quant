@@ -2,9 +2,45 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from redis.asyncio import Redis
+
+
+class BusProto(Protocol):
+    """Bus protocol for pub/sub operations.
+
+    IMPORTANT: Must match existing Bus implementation signature exactly.
+    This protocol allows executors and other components to depend on the
+    bus interface without importing the concrete Bus implementation.
+    """
+
+    async def publish_json(self, topic: str, payload: dict[str, Any]) -> None:
+        """Publish JSON payload to topic.
+
+        Args:
+            topic: Redis pub/sub topic
+            payload: JSON-serializable dictionary
+
+        Note:
+            Payload will be serialized to JSON before publishing.
+        """
+        ...
+
+    def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
+        """Subscribe to topic, yield messages.
+
+        Args:
+            topic: Redis pub/sub topic to subscribe to
+
+        Returns:
+            AsyncIterator yielding JSON-deserialized messages
+
+        Note:
+            This is a SYNC method returning AsyncIterator (not async def).
+            Existing usage: async for msg in bus.subscribe(topic)  # No await!
+        """
+        ...
 
 
 class Bus:
