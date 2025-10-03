@@ -154,6 +154,7 @@ class SimulationEngine(ABC):
 - `simulation/contracts.py` (SimulationScenario, SimulationResult, ~120 LOC)
 - `simulation/engine.py` (SimulationEngine base, ~180 LOC)
 - `simulation/context.py` (SimulationContext, isolated state, ~100 LOC)
+- `scripts/benchmark_simulation.py` (Performance benchmarking utility, ~150 LOC)
 - `tests/test_simulation_base.py`
 
 **Acceptance:**
@@ -251,8 +252,8 @@ class MultiDayReplayEngine(SimulationEngine):
 **Constraints:**
 - No new runtime dependencies
 - No network I/O in tests
-- Must complete 30-day replay in <60 seconds
-- Memory usage bounded (stream processing, not batch loading)
+- Should complete 30-day replay efficiently (benchmark separately, not enforced in CI)
+- Memory usage bounded (stream processing, not batch loading, enforced in tests)
 - Deterministic with fixed seed
 
 **Files:**
@@ -268,9 +269,11 @@ class MultiDayReplayEngine(SimulationEngine):
 - Test includes 7-day replay with known outcome (golden test)
 - Test verifies determinism: same seed → same daily PnL sequence
 - Test verifies session boundary detection (splits days correctly)
-- **Performance test: 30-day replay completes in <60 seconds**
-- **Memory test: 90-day replay uses <500MB peak memory**
+- **Benchmark (optional, not in CI): 30-day replay completes in <60 seconds on reference hardware**
+- **Benchmark (optional, not in CI): 90-day replay uses <500MB peak memory on reference hardware**
 - `make fmt lint type test` green
+
+**Note:** Performance benchmarks are goals, not hard test requirements. Actual performance varies by hardware. Use `scripts/benchmark_simulation.py` to measure on target deployment hardware.
 
 ---
 
@@ -484,26 +487,29 @@ class MonteCarloEngine(SimulationEngine):
 
 **Constraints:**
 - No new runtime dependencies
-- Must complete 1000 trials in <5 minutes (with 4 workers)
-- Memory usage bounded (process results incrementally)
+- Should complete 1000 trials efficiently (benchmark separately, not enforced in CI)
+- Memory usage bounded (process results incrementally, enforced in tests)
 - Deterministic: same seed → same distribution
 
 **Files:**
 - `simulation/monte_carlo.py` (MonteCarloEngine, ~280 LOC)
 - `simulation/distributions.py` (Statistical aggregation, ~120 LOC)
+- `scripts/benchmark_monte_carlo.py` (Monte Carlo performance benchmarks, ~100 LOC)
 - `tests/test_monte_carlo.py`
 
 **Acceptance:**
 - Generates N parameter sets from ranges correctly
-- Runs trials in parallel (test verifies speedup vs sequential)
+- Runs trials in parallel (test verifies speedup vs sequential with small N=10)
 - Aggregates results into distributions accurately
 - Calculates confidence intervals correctly (test vs known distribution)
 - Test verifies determinism: same base_seed → same distribution
 - **Test verifies reproducibility: run twice with same seed → identical percentiles**
-- **Performance test: 1000 trials complete in <5 minutes (4 workers)**
-- **Memory test: 10,000 trials use <1GB peak memory**
+- **Benchmark (optional, not in CI): 1000 trials complete in <5 minutes with 4 workers on reference hardware**
+- **Benchmark (optional, not in CI): 10,000 trials use <1GB peak memory on reference hardware**
 - Test includes parameter sensitivity analysis (identify most impactful param)
 - `make fmt lint type test` green
+
+**Note:** Performance benchmarks are goals, not hard test requirements. CI tests use small N (10-100 trials) for speed. Use `scripts/benchmark_monte_carlo.py` with full trial counts on target deployment hardware.
 
 ---
 
@@ -732,7 +738,7 @@ class SyntheticMarketGenerator:
 - Realistic statistical properties (test vs historical data distributions)
 - Support multiple patterns (trending, ranging, volatile, quiet)
 - Deterministic with seed (reproducible)
-- Fast generation (<1 second for 30 days of 1-minute bars)
+- Fast generation (benchmark separately, not enforced in CI)
 
 **Constraints:**
 - No new runtime dependencies (use numpy only)
@@ -742,6 +748,7 @@ class SyntheticMarketGenerator:
 **Files:**
 - `simulation/synthetic.py` (SyntheticMarketGenerator, ~250 LOC)
 - `simulation/patterns.py` (Pattern injection utilities, ~100 LOC)
+- `scripts/benchmark_synthetic_data.py` (Synthetic data generation benchmarks, ~80 LOC)
 - `tests/test_synthetic_data.py`
 
 **Acceptance:**
@@ -750,11 +757,13 @@ class SyntheticMarketGenerator:
 - Volume has correct autocorrelation (test vs theoretical ACF)
 - Trend injection creates detectable uptrend/downtrend
 - Test verifies determinism: same seed → identical price paths
-- **Test verifies statistical realism: compare distributions vs historical data**
-- **Performance test: generate 30 days of 1-min bars in <1 second**
-- **Test verifies mean reversion: prices oscillate around initial price**
+- **Test verifies statistical realism: compare distributions vs historical data (use small sample for CI)**
+- **Benchmark (optional, not in CI): generate 30 days of 1-min bars in <1 second on reference hardware**
+- **Test verifies mean reversion: prices oscillate around initial price over time**
 - Test includes volatility clustering (GARCH-like behavior)
 - `make fmt lint type test` green
+
+**Note:** Performance benchmarks are goals. CI tests use smaller samples (1-3 days, 5-min bars) for speed. Use `scripts/benchmark_synthetic_data.py` for full-scale generation benchmarks.
 
 ---
 
@@ -918,6 +927,7 @@ class FailureModeDetector:
 - CLI quickstart examples
 - Batch execution workflows
 - Result analysis patterns
+- Performance benchmarking guide (using scripts/benchmark_*.py)
 - Troubleshooting common issues
 
 #### 4. API Reference
@@ -936,8 +946,9 @@ class FailureModeDetector:
 **Acceptance:**
 - ARCHITECTURE.md covers all simulation engine types
 - SCENARIOS.md documents all predefined scenarios with examples
-- USAGE.md includes CLI examples for common tasks
+- USAGE.md includes CLI examples for common tasks and performance benchmarking guide
 - API.md provides clear interface documentation
+- Performance benchmarking section explains hardware-dependent nature of benchmarks
 - All code snippets in docs are valid (test via doctest or manual verification)
 - Cross-references between docs are accurate
 - `make fmt lint type test` green (no code changes)
@@ -956,13 +967,13 @@ class FailureModeDetector:
 - [ ] Synthetic data generator produces realistic market data
 - [ ] Scenario analyzer identifies failure modes correctly
 - [ ] Documentation covers architecture, scenarios, usage, and API
-- [ ] Performance guardrails met:
-  - 30-day replay: <60 seconds
-  - 1000 Monte Carlo trials: <5 minutes
-  - Synthetic data generation: <1 second for 30 days
-- [ ] Memory guardrails met:
-  - 90-day replay: <500MB peak
-  - 10,000 Monte Carlo trials: <1GB peak
+- [ ] Performance benchmarks documented (see scripts/benchmark_simulation.py):
+  - 30-day replay: target <60 seconds on reference hardware
+  - 1000 Monte Carlo trials: target <5 minutes with 4 workers
+  - Synthetic data generation: target <1 second for 30 days
+- [ ] Memory usage validated (enforced in tests):
+  - Bounded caches and streaming processing (no unbounded growth)
+  - Benchmarks (optional): 90-day replay <500MB, 10k trials <1GB on reference hardware
 
 ---
 
