@@ -9,15 +9,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any
 
 from core.bus import BusProto
 from core.contracts import FillEvent, OrderIntent
-
-if TYPE_CHECKING:
-    # ExecutionAlgorithm will be defined in Phase 8.1
-    # For now, use a placeholder type
-    ExecutionAlgorithm = Any
+from execution.contracts import ExecutionAlgorithm
 
 
 class BaseExecutor(ABC):
@@ -54,7 +49,7 @@ class BaseExecutor(ABC):
         - algo_type: Algorithm type (TWAP, VWAP, etc.)
 
         Args:
-            algo: Execution algorithm configuration (defined in Phase 8.1)
+            algo: Execution algorithm configuration
 
         Returns:
             List of OrderIntents to emit to bus (topic: "strat.intent")
