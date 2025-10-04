@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Literal
+from typing import Any, Literal
 
 from core.bus import BusProto
 from core.contracts import OrderIntent
@@ -66,12 +66,17 @@ class IcebergExecutor(BaseExecutor):
             List with single OrderIntent for visible portion
 
         Note:
+            Supports multiple price levels via params:
+            - Single price: params={'limit_price': 50000.0}
+            - Multiple levels: params={'price_levels': [50000.0, 49900.0, 49800.0]}
+
             Each OrderIntent.meta includes:
             - execution_id: Unique execution identifier
             - slice_id: Slice identifier within this execution
             - algo_type: "Iceberg"
             - total_quantity: Total quantity (hidden from market)
             - visible_ratio: Visible ratio parameter
+            - price_levels: List of price levels (if multi-level mode)
         """
         # Generate unique execution ID
         execution_id = f"iceberg_{uuid.uuid4().hex[:8]}"
@@ -79,23 +84,13 @@ class IcebergExecutor(BaseExecutor):
         # Calculate visible quantity
         visible_qty = algo.total_quantity * self.visible_ratio
 
-        # Get limit price from params
-        if "limit_price" not in algo.params:
-            raise ValueError(
-                "limit_price must be provided in algo.params for iceberg orders. "
-                "Provide params={'limit_price': <price>}"
-            )
-        price = algo.params["limit_price"]
-        if not isinstance(price, (int, float)):
-            raise TypeError(f"limit_price must be a number, got {type(price).__name__}")
-        limit_price = float(price)
-        if limit_price <= 0:
-            raise ValueError(f"limit_price must be > 0, got {limit_price}")
+        # Parse price configuration (single or multiple levels)
+        price_levels = self._parse_price_levels(algo.params)
 
         # Current time as base
         start_ts_ns = int(time.time() * 1e9)
 
-        # Create initial visible intent
+        # Create initial visible intent at first price level
         intent = self._create_visible_intent(
             execution_id=execution_id,
             slice_idx=0,
@@ -103,11 +98,63 @@ class IcebergExecutor(BaseExecutor):
             side=algo.side,
             visible_qty=visible_qty,
             total_qty=algo.total_quantity,
-            limit_price=limit_price,
+            limit_price=price_levels[0],
             scheduled_ts_ns=start_ts_ns,
+            price_levels=price_levels,
         )
 
         return [intent]
+
+    def _parse_price_levels(self, params: dict[str, Any]) -> list[float]:
+        """Parse price levels from params (single or multiple).
+
+        Args:
+            params: Algorithm parameters
+
+        Returns:
+            List of price levels (length 1 for single price)
+
+        Raises:
+            ValueError: If neither limit_price nor price_levels provided
+            ValueError: If price_levels is empty or contains invalid prices
+        """
+        # Check for multi-level configuration
+        if "price_levels" in params:
+            levels = params["price_levels"]
+            if not isinstance(levels, list):
+                raise TypeError(f"price_levels must be a list, got {type(levels).__name__}")
+            if len(levels) == 0:
+                raise ValueError("price_levels must not be empty")
+
+            # Validate each price
+            validated_levels: list[float] = []
+            for i, price in enumerate(levels):
+                if not isinstance(price, (int, float)):
+                    raise TypeError(
+                        f"price_levels[{i}] must be a number, got {type(price).__name__}"
+                    )
+                price_float = float(price)
+                if price_float <= 0:
+                    raise ValueError(f"price_levels[{i}] must be > 0, got {price_float}")
+                validated_levels.append(price_float)
+
+            return validated_levels
+
+        # Fall back to single limit_price
+        if "limit_price" not in params:
+            raise ValueError(
+                "Either limit_price or price_levels must be provided in algo.params. "
+                "Provide params={'limit_price': <price>} or params={'price_levels': [<prices>]}"
+            )
+
+        price = params["limit_price"]
+        if not isinstance(price, (int, float)):
+            raise TypeError(f"limit_price must be a number, got {type(price).__name__}")
+        limit_price = float(price)
+        if limit_price <= 0:
+            raise ValueError(f"limit_price must be > 0, got {limit_price}")
+
+        return [limit_price]
 
     def _create_visible_intent(
         self,
@@ -119,6 +166,7 @@ class IcebergExecutor(BaseExecutor):
         total_qty: float,
         limit_price: float,
         scheduled_ts_ns: int,
+        price_levels: list[float] | None = None,
     ) -> OrderIntent:
         """Create OrderIntent for visible portion of iceberg.
 
@@ -129,8 +177,9 @@ class IcebergExecutor(BaseExecutor):
             side: Order side (buy or sell)
             visible_qty: Visible quantity to show
             total_qty: Total quantity (hidden)
-            limit_price: Limit price for order
+            limit_price: Limit price for this slice
             scheduled_ts_ns: Scheduled execution time (nanoseconds)
+            price_levels: Full list of price levels (for multi-level mode)
 
         Returns:
             OrderIntent with iceberg metadata packed in meta field
@@ -138,7 +187,7 @@ class IcebergExecutor(BaseExecutor):
         slice_id = f"{execution_id}_slice_{slice_idx}"
 
         # Pack iceberg metadata into meta field for fill tracking
-        meta = {
+        meta: dict[str, Any] = {
             "execution_id": execution_id,
             "slice_id": slice_id,
             "algo_type": "Iceberg",
@@ -147,6 +196,10 @@ class IcebergExecutor(BaseExecutor):
             "visible_ratio": self.visible_ratio,
             "replenish_threshold": self.replenish_threshold,
         }
+
+        # Include price_levels in metadata if multi-level mode
+        if price_levels is not None and len(price_levels) > 1:
+            meta["price_levels"] = price_levels
 
         return OrderIntent(
             id=slice_id,
@@ -168,6 +221,8 @@ class IcebergExecutor(BaseExecutor):
         Tracks fills for this execution and yields new OrderIntents when
         the visible portion reaches the replenish threshold.
 
+        For multi-level mode, rotates through price_levels for each replenishment.
+
         Args:
             bus: Bus instance for subscribing to fills
             execution_id: Execution ID to filter fills
@@ -180,8 +235,8 @@ class IcebergExecutor(BaseExecutor):
             This is a simplified implementation. Production version would
             handle timeouts, cancellations, price adjustments, and error cases.
         """
-        # Get limit price from params
-        limit_price = float(algo.params["limit_price"])
+        # Parse price levels (single or multiple)
+        price_levels = self._parse_price_levels(algo.params)
 
         # Track fills
         filled_quantity = 0.0
@@ -206,6 +261,11 @@ class IcebergExecutor(BaseExecutor):
 
                     # Generate replenishment intent
                     current_slice_idx += 1
+
+                    # Rotate through price levels (modulo wraps around)
+                    price_level_idx = current_slice_idx % len(price_levels)
+                    next_limit_price = price_levels[price_level_idx]
+
                     replenish_intent = self._create_visible_intent(
                         execution_id=execution_id,
                         slice_idx=current_slice_idx,
@@ -213,8 +273,9 @@ class IcebergExecutor(BaseExecutor):
                         side=algo.side,
                         visible_qty=next_visible_qty,
                         total_qty=algo.total_quantity,
-                        limit_price=limit_price,
+                        limit_price=next_limit_price,
                         scheduled_ts_ns=int(time.time() * 1e9),
+                        price_levels=price_levels,
                     )
 
                     # Reset tracking for new slice
