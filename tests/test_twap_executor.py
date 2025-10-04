@@ -1,14 +1,20 @@
 """Tests for TWAP executor (Phase 8.2)."""
 
+import asyncio
+import contextlib
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from apps.paper_trader.main import PaperTrader
+from apps.risk_engine.main import IntentStore, RiskEngine
 from core.contracts import FillEvent, OrderIntent
 from execution.contracts import ExecutionAlgorithm
 from execution.twap import TWAPExecutor
+from tests.utils import InMemoryBus, build_test_config
 
 
 def test_twap_executor_valid() -> None:
@@ -426,6 +432,150 @@ async def test_twap_monitor_fills_partial() -> None:
         assert report.slices_total == 5
         assert report.status == "running"  # Not completed
         assert report.end_ts_ns is None  # Still running
+
+
+@pytest.mark.asyncio
+async def test_twap_integration_cancel_flow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise TWAP intents end-to-end and ensure cancel intents propagate."""
+
+    try:
+        from fakeredis.aioredis import FakeRedis
+    except ModuleNotFoundError:
+        pytest.skip("fakeredis.aioredis not installed")
+
+    fake = FakeRedis(decode_responses=True)
+
+    async def _aclose() -> None:
+        return None
+
+    monkeypatch.setattr(fake, "aclose", _aclose, raising=False)
+
+    def _from_url(
+        url: str, *, encoding: str | None = None, decode_responses: bool = False
+    ) -> FakeRedis:
+        return fake
+
+    monkeypatch.setattr("apps.risk_engine.main.Redis.from_url", _from_url)
+
+    bus = InMemoryBus()
+    cfg = build_test_config(tmp_path, ["ATOMUSDT"])
+    store = IntentStore(redis_url="redis://fake")
+    engine = RiskEngine(bus=bus, config=cfg, store=store)
+    trader = PaperTrader(bus=bus, config=cfg, journal_dir=Path(cfg.logging.journal_dir))
+
+    risk_task = asyncio.create_task(engine.run())
+    paper_task = asyncio.create_task(trader.run())
+
+    async def wait_for(condition: Callable[[], bool], *, timeout: float = 1.0) -> None:
+        loop = asyncio.get_running_loop()
+        end = loop.time() + timeout
+        while loop.time() < end:
+            if condition():
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError("condition not met before timeout")
+
+    try:
+        trades_topic = cfg.redis.topics.trades.format(symbol="ATOMUSDT")
+        await bus.publish_json(trades_topic, {"price": 10.0})
+        await wait_for(lambda: trader.last_trade_price.get("ATOMUSDT") == 10.0)
+
+        executor = TWAPExecutor(strategy_id="twap-int", slice_count=2, order_type="market")
+        algo = ExecutionAlgorithm(
+            algo_type="TWAP",
+            symbol="ATOMUSDT",
+            side="buy",
+            total_quantity=2.0,
+            duration_seconds=60,
+            params={},
+        )
+        intents = await executor.plan_execution(algo)
+        exec_intents = [intent for intent in intents if intent.qty > 0]
+        cancel_intents = [intent for intent in intents if intent.qty == 0]
+
+        intent_topic = cfg.redis.topics.intents
+
+        for intent in exec_intents:
+            payload = {
+                "id": intent.id,
+                "ts_local_ns": intent.ts_local_ns,
+                "strategy_id": intent.strategy_id,
+                "symbol": intent.symbol,
+                "side": intent.side,
+                "type": intent.type,
+                "qty": intent.qty,
+                "limit_price": intent.limit_price,
+                "meta": intent.meta,
+            }
+            await bus.publish_json(intent_topic, payload)
+
+        risk_topic = cfg.redis.topics.risk
+        orders_topic = cfg.redis.topics.orders
+        fills_topic = cfg.redis.topics.fills
+
+        await wait_for(lambda: len(bus.published[risk_topic]) >= len(exec_intents))
+        await wait_for(lambda: len(bus.published[orders_topic]) >= len(exec_intents))
+        await wait_for(lambda: len(bus.published[fills_topic]) >= len(exec_intents))
+
+        fills_before_cancel = len(bus.published[fills_topic])
+        assert fills_before_cancel == len(exec_intents)
+
+        for intent in cancel_intents:
+            payload = {
+                "id": intent.id,
+                "ts_local_ns": intent.ts_local_ns,
+                "strategy_id": intent.strategy_id,
+                "symbol": intent.symbol,
+                "side": intent.side,
+                "type": intent.type,
+                "qty": intent.qty,
+                "limit_price": intent.limit_price,
+                "meta": intent.meta,
+            }
+            await bus.publish_json(intent_topic, payload)
+
+        await wait_for(
+            lambda: len(bus.published[risk_topic]) >= len(exec_intents) + len(cancel_intents)
+        )
+        await wait_for(
+            lambda: len(bus.published[orders_topic]) >= len(exec_intents) + len(cancel_intents)
+        )
+
+        cancel_orders = [o for o in bus.published[orders_topic] if o["qty"] == 0.0]
+        assert len(cancel_orders) == len(cancel_intents)
+        for order in cancel_orders:
+            assert order["intent_id"].endswith("_cancel")
+            assert order["type"] == "market"
+
+        cancel_decisions = [
+            d for d in bus.published[risk_topic] if d["intent_id"].endswith("_cancel")
+        ]
+        assert len(cancel_decisions) == len(cancel_intents)
+        assert all(decision["allowed"] for decision in cancel_decisions)
+
+        metrics = {
+            "orders_total": len(bus.published[orders_topic]),
+            "orders_cancel": len(cancel_orders),
+            "fills_total": len(bus.published[fills_topic]),
+            "fills_cancel": sum(
+                1 for fill in bus.published[fills_topic] if float(fill.get("qty", 0.0)) == 0.0
+            ),
+        }
+
+        assert metrics["orders_total"] == len(exec_intents) + len(cancel_intents)
+        assert metrics["orders_cancel"] == len(cancel_intents)
+        assert metrics["fills_total"] >= fills_before_cancel
+        assert metrics["fills_cancel"] == len(cancel_intents)
+    finally:
+        risk_task.cancel()
+        paper_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await risk_task
+            await paper_task
+        await engine.close()
+        await trader.close()
 
 
 @pytest.mark.asyncio
