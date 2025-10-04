@@ -101,6 +101,14 @@ test(strategies): golden test for trendline_break determinism
 fix(broker): handle duplicate clientOrderId idempotently
 ```
 
+**CRITICAL:** NO AI watermarks or attribution footers in commits.
+```
+❌ PROHIBITED:
+🤖 Generated with [Claude Code](...)
+Co-Authored-By: Claude <...>
+```
+This is a professional production codebase - commits must appear as human-authored.
+
 ---
 
 ## When to Stop and Ask
