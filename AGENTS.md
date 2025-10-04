@@ -861,20 +861,28 @@ fills.new            # Fill events
 
 ---
 
-## Version History
+## Project Status
+
+**Current Phase:** Phase 8 — Execution Layer
+**Active Task:** Phase 8.6 — Slippage Model (next)
+**Completed Phases:** 0-3 (Bootstrap through Strategy Framework), 4-7 (Data through Research), 8.0-8.5 (Execution foundations through POV)
+**See:** [ROADMAP.md](./ROADMAP.md) and `roadmap/phases/*.md` for complete phase history and specifications
+
+---
+
+## Document Changelog
+
+**AGENTS.md version history (this file only):**
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2024-01 | Initial bootstrap (Phase 0) |
-| 2.0 | 2024-03 | Event bus + market data (Phase 1) |
-| 3.0 | 2024-06 | Risk engine + paper OMS (Phase 2) |
-| 3.8 | 2025-09 | Strategy plugin framework (Phase 3) |
-| 8.5 | 2025-10 | Execution layer (TWAP, VWAP, Iceberg, POV algorithms) |
-| 8.5.1 | 2025-10-04 | Enterprise-grade AGENTS.md: audit workflow, escalation protocols |
+| 1.0 | 2024-01 | Initial AGENTS.md operating guide for Phase 0 |
+| 2.0 | 2025-10-04 | Enterprise-grade improvements: audit workflow integration, escalation & recovery protocols, logging policies, repository structure updates, Phase 3 documentation added |
+
+**For project development history, see git log and ROADMAP.md**
 
 ---
 
 **Last Updated:** 2025-10-04
-**Current Phase:** Phase 8 — Execution Layer (Phase 8.5 POV complete, Phase 8.6 next)
 **Maintained By:** Njord Trust
 **License:** Proprietary
