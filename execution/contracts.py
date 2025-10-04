@@ -170,6 +170,8 @@ class ExecutionReport:
         status: Execution status
         start_ts_ns: Execution start time (nanoseconds)
         end_ts_ns: Execution end time (nanoseconds, None if not finished)
+        benchmark_vwap: VWAP benchmark price (None for non-VWAP algorithms)
+        vwap_deviation: Deviation from benchmark as fraction (None for non-VWAP)
     """
 
     execution_id: str
@@ -184,6 +186,8 @@ class ExecutionReport:
     status: Literal["running", "completed", "cancelled", "failed"]
     start_ts_ns: int
     end_ts_ns: int | None
+    benchmark_vwap: float | None = None
+    vwap_deviation: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary.
@@ -204,6 +208,8 @@ class ExecutionReport:
             "status": self.status,
             "start_ts_ns": self.start_ts_ns,
             "end_ts_ns": self.end_ts_ns,
+            "benchmark_vwap": self.benchmark_vwap,
+            "vwap_deviation": self.vwap_deviation,
         }
 
     @classmethod
@@ -229,4 +235,6 @@ class ExecutionReport:
             status=data["status"],
             start_ts_ns=data["start_ts_ns"],
             end_ts_ns=data.get("end_ts_ns"),
+            benchmark_vwap=data.get("benchmark_vwap"),
+            vwap_deviation=data.get("vwap_deviation"),
         )

@@ -10,9 +10,10 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Literal
 
+from core.bus import BusProto
 from core.contracts import OrderIntent
 from execution.base import BaseExecutor
-from execution.contracts import ExecutionAlgorithm
+from execution.contracts import ExecutionAlgorithm, ExecutionReport
 
 if TYPE_CHECKING:
     from research.data_reader import DataReader
@@ -84,8 +85,8 @@ class VWAPExecutor(BaseExecutor):
         # Generate unique execution ID
         execution_id = f"vwap_{uuid.uuid4().hex[:8]}"
 
-        # Calculate volume profile
-        volume_weights = self._calculate_volume_profile(
+        # Calculate volume profile and benchmark VWAP
+        volume_weights, benchmark_vwap = self._calculate_volume_profile(
             symbol=algo.symbol, duration_seconds=algo.duration_seconds
         )
 
@@ -127,20 +128,23 @@ class VWAPExecutor(BaseExecutor):
                 slice_quantity=slice_qty,
                 scheduled_ts_ns=scheduled_ts_ns,
                 limit_price=limit_price_base,
+                benchmark_vwap=benchmark_vwap,
             )
             intents.append(intent)
 
         return intents
 
-    def _calculate_volume_profile(self, symbol: str, duration_seconds: int) -> list[float]:
-        """Calculate expected volume distribution from historical data.
+    def _calculate_volume_profile(
+        self, symbol: str, duration_seconds: int
+    ) -> tuple[list[float], float | None]:
+        """Calculate expected volume distribution and benchmark VWAP from historical data.
 
         Args:
             symbol: Trading pair symbol
             duration_seconds: Execution duration in seconds
 
         Returns:
-            List of volume weights summing to 1.0
+            Tuple of (volume weights summing to 1.0, benchmark VWAP price or None)
 
         Note:
             Falls back to uniform distribution if:
@@ -174,10 +178,25 @@ class VWAPExecutor(BaseExecutor):
             # Check if we have enough data
             if df is None or len(df) < self.slice_count:
                 # Fall back to uniform distribution
-                return [1.0 / self.slice_count] * self.slice_count
+                return ([1.0 / self.slice_count] * self.slice_count, None)
 
-            # Extract volume column
+            # Extract volume and price columns
             volumes = df["volume"].values
+            # Use typical price (high + low + close) / 3 for VWAP calculation
+            if "high" in df.columns and "low" in df.columns and "close" in df.columns:
+                typical_prices = (df["high"] + df["low"] + df["close"]) / 3.0
+            elif "close" in df.columns:
+                typical_prices = df["close"]
+            else:
+                # No price data available
+                typical_prices = None
+
+            # Calculate benchmark VWAP from historical data
+            benchmark_vwap = None
+            if typical_prices is not None and len(typical_prices) > 0:
+                total_volume = sum(volumes)
+                if total_volume > 0:
+                    benchmark_vwap = float(sum(typical_prices.values * volumes) / total_volume)
 
             # Group volumes into slices
             slice_size = len(volumes) // self.slice_count
@@ -194,17 +213,17 @@ class VWAPExecutor(BaseExecutor):
 
             # Handle zero volume case
             if total_volume == 0:
-                return [1.0 / self.slice_count] * self.slice_count
+                return ([1.0 / self.slice_count] * self.slice_count, benchmark_vwap)
 
             # Normalize to weights summing to 1.0
             weights = [vol / total_volume for vol in slice_volumes]
 
-            return weights
+            return (weights, benchmark_vwap)
 
         except Exception:
             # Fall back to uniform distribution on any error
             # Production version would log the error
-            return [1.0 / self.slice_count] * self.slice_count
+            return ([1.0 / self.slice_count] * self.slice_count, None)
 
     def _create_weighted_intent(
         self,
@@ -217,6 +236,7 @@ class VWAPExecutor(BaseExecutor):
         slice_quantity: float,
         scheduled_ts_ns: int,
         limit_price: float | None,
+        benchmark_vwap: float | None,
     ) -> OrderIntent:
         """Create OrderIntent for volume-weighted slice.
 
@@ -230,6 +250,7 @@ class VWAPExecutor(BaseExecutor):
             slice_quantity: Quantity for this slice
             scheduled_ts_ns: Scheduled execution time (nanoseconds)
             limit_price: Limit price for order (None for market orders)
+            benchmark_vwap: Historical VWAP benchmark price (None if unavailable)
 
         Returns:
             OrderIntent with execution metadata packed in meta field
@@ -243,6 +264,7 @@ class VWAPExecutor(BaseExecutor):
             "algo_type": "VWAP",
             "slice_idx": slice_idx,
             "volume_weight": weight,  # Track weight for analysis
+            "benchmark_vwap": benchmark_vwap,  # Historical VWAP for comparison
         }
 
         return OrderIntent(
@@ -256,3 +278,130 @@ class VWAPExecutor(BaseExecutor):
             limit_price=limit_price,
             meta=meta,
         )
+
+    async def _monitor_fills(
+        self,
+        bus: BusProto,
+        execution_id: str,
+        total_quantity: float,
+        symbol: str,
+        benchmark_vwap: float | None,
+    ) -> ExecutionReport:
+        """Track fills and build execution report with VWAP benchmark comparison.
+
+        Subscribes to fills.new topic and aggregates fills for this execution,
+        comparing execution VWAP against historical benchmark.
+
+        Args:
+            bus: Bus instance for subscribing to fills
+            execution_id: Execution ID to filter fills
+            total_quantity: Total quantity to execute
+            symbol: Trading pair symbol
+            benchmark_vwap: Historical VWAP benchmark (None if unavailable)
+
+        Returns:
+            ExecutionReport with aggregated fill data and VWAP deviation
+
+        Note:
+            This is a simplified implementation. Production version would
+            handle timeouts, cancellations, and error cases.
+        """
+
+        filled_quantity = 0.0
+        total_fees = 0.0
+        weighted_price_sum = 0.0
+        slices_completed = 0
+        start_ts_ns = int(time.time() * 1e9)
+
+        async for fill in self.track_fills(bus, execution_id):
+            filled_quantity += fill.qty
+            total_fees += fill.fee
+            weighted_price_sum += fill.price * fill.qty
+            slices_completed += 1
+
+            # Check if execution complete
+            if filled_quantity >= total_quantity:
+                break
+
+        # Calculate average fill price (execution VWAP)
+        avg_fill_price = weighted_price_sum / filled_quantity if filled_quantity > 0 else 0.0
+
+        # Calculate VWAP deviation from benchmark
+        vwap_deviation = None
+        if benchmark_vwap is not None and benchmark_vwap > 0 and avg_fill_price > 0:
+            vwap_deviation = (avg_fill_price - benchmark_vwap) / benchmark_vwap
+
+        # Determine status
+        from typing import Literal as L
+
+        status: L["running", "completed", "cancelled", "failed"] = (
+            "completed" if filled_quantity >= total_quantity else "running"
+        )
+
+        end_ts_ns = int(time.time() * 1e9) if status == "completed" else None
+
+        return ExecutionReport(
+            execution_id=execution_id,
+            symbol=symbol,
+            total_quantity=total_quantity,
+            filled_quantity=filled_quantity,
+            remaining_quantity=total_quantity - filled_quantity,
+            avg_fill_price=avg_fill_price,
+            total_fees=total_fees,
+            slices_completed=slices_completed,
+            slices_total=self.slice_count,
+            status=status,
+            start_ts_ns=start_ts_ns,
+            end_ts_ns=end_ts_ns,
+            benchmark_vwap=benchmark_vwap,
+            vwap_deviation=vwap_deviation,
+        )
+
+    def recalculate_remaining_weights(
+        self,
+        original_weights: list[float],
+        fills_per_slice: dict[int, float],
+        current_slice_idx: int,
+    ) -> list[float]:
+        """Recalculate weights for remaining slices based on actual fills.
+
+        Dynamically adjusts remaining execution when realized volume diverges
+        from expected profile.
+
+        Args:
+            original_weights: Original volume weights for all slices
+            fills_per_slice: Actual fill quantities by slice index
+            current_slice_idx: Current slice index (next slice to execute)
+
+        Returns:
+            Adjusted weights for remaining slices (current_slice_idx onwards)
+
+        Note:
+            If actual cumulative fills deviate significantly from expected,
+            redistributes remaining quantity across remaining slices using
+            original volume profile weights.
+        """
+        # Calculate expected vs actual cumulative fills
+        expected_cumulative = sum(original_weights[:current_slice_idx])
+        actual_cumulative = sum(fills_per_slice.values())
+
+        # If divergence is significant (>10%), rebalance remaining weights
+        if expected_cumulative > 0:
+            divergence = abs(actual_cumulative - expected_cumulative) / expected_cumulative
+            if divergence > 0.1:  # 10% threshold
+                # Recalculate remaining weights from original profile
+                remaining_weights = original_weights[current_slice_idx:]
+                if sum(remaining_weights) > 0:
+                    # Normalize remaining weights to sum to 1.0
+                    remaining_total = sum(remaining_weights)
+                    return [w / remaining_total for w in remaining_weights]
+
+        # No significant divergence, return original remaining weights
+        remaining_weights = original_weights[current_slice_idx:]
+        if sum(remaining_weights) > 0:
+            remaining_total = sum(remaining_weights)
+            return [w / remaining_total for w in remaining_weights]
+
+        # Fallback: uniform distribution
+        remaining_count = self.slice_count - current_slice_idx
+        return [1.0 / remaining_count] * remaining_count if remaining_count > 0 else []
