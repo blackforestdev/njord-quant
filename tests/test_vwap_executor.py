@@ -570,17 +570,23 @@ def test_vwap_recalculate_remaining_weights_no_divergence() -> None:
         strategy_id="test_strat", data_reader=data_reader, slice_count=5, order_type="market"
     )
 
+    # Total quantity: 10.0
+    total_quantity = 10.0
+
     # Original weights: [0.1, 0.2, 0.3, 0.2, 0.2]
     original_weights = [0.1, 0.2, 0.3, 0.2, 0.2]
 
-    # Fills for first 2 slices match expected (0.1 + 0.2 = 0.3)
-    fills_per_slice = {0: 0.1, 1: 0.2}
+    # Fills for first 2 slices match expected
+    # Expected: 0.1 * 10 = 1.0, 0.2 * 10 = 2.0
+    # Actual: exactly matches expected
+    fills_per_slice = {0: 1.0, 1: 2.0}
 
     # Recalculate from slice 2 onwards
     remaining_weights = executor.recalculate_remaining_weights(
         original_weights=original_weights,
         fills_per_slice=fills_per_slice,
         current_slice_idx=2,
+        total_quantity=total_quantity,
     )
 
     # No divergence, so weights [0.3, 0.2, 0.2] normalized
@@ -599,20 +605,26 @@ def test_vwap_recalculate_remaining_weights_with_divergence() -> None:
         strategy_id="test_strat", data_reader=data_reader, slice_count=5, order_type="market"
     )
 
+    # Total quantity: 10.0
+    total_quantity = 10.0
+
     # Original weights: [0.1, 0.2, 0.3, 0.2, 0.2]
     original_weights = [0.1, 0.2, 0.3, 0.2, 0.2]
 
-    # Expected cumulative at slice 2: 0.1 + 0.2 = 0.3
-    # Actual fills only 0.15 (50% of expected - significant divergence)
-    fills_per_slice = {0: 0.05, 1: 0.10}
+    # Expected cumulative at slice 2: (0.1 + 0.2) * 10 = 3.0
+    # Actual fills only 1.5 (50% of expected - significant divergence)
+    fills_per_slice = {0: 0.5, 1: 1.0}
 
     # Recalculate from slice 2 onwards
     remaining_weights = executor.recalculate_remaining_weights(
         original_weights=original_weights,
         fills_per_slice=fills_per_slice,
         current_slice_idx=2,
+        total_quantity=total_quantity,
     )
 
+    # Actual cumulative = 1.5 / 10 = 0.15
+    # Expected cumulative = 0.3
     # Divergence = |0.15 - 0.3| / 0.3 = 0.5 (50%) > 10% threshold
     # Should rebalance: take remaining weights [0.3, 0.2, 0.2], normalize
     expected = [0.3 / 0.7, 0.2 / 0.7, 0.2 / 0.7]
@@ -620,3 +632,226 @@ def test_vwap_recalculate_remaining_weights_with_divergence() -> None:
     assert len(remaining_weights) == 3
     for i, w in enumerate(remaining_weights):
         assert w == pytest.approx(expected[i])
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_remaining_slices_no_divergence() -> None:
+    """Verify replan_remaining_slices maintains plan when no divergence."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=10.0,
+        duration_seconds=500,
+        params={},
+    )
+
+    # Get original plan
+    original_intents = await executor.plan_execution(algo)
+
+    # Simulate fills for first 2 slices that match expected quantities
+    execution_id = original_intents[0].meta["execution_id"]
+    fills = [
+        FillEvent(
+            order_id=original_intents[0].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=2.0,  # Uniform: 10 / 5 = 2.0
+            price=50000.0,
+            ts_fill_ns=original_intents[0].ts_local_ns,
+            fee=1.0,
+            meta=original_intents[0].meta,
+        ),
+        FillEvent(
+            order_id=original_intents[1].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=2.0,  # Uniform: 10 / 5 = 2.0
+            price=50100.0,
+            ts_fill_ns=original_intents[1].ts_local_ns,
+            fee=1.0,
+            meta=original_intents[1].meta,
+        ),
+    ]
+
+    # Replan remaining slices
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # Should have 3 remaining slices (slices 2, 3, 4)
+    assert len(adjusted_intents) == 3
+
+    # No divergence, so quantities should still be uniform
+    # Remaining quantity = 10 - 4 = 6.0
+    # Uniform across 3 slices = 2.0 each
+    for intent in adjusted_intents:
+        assert intent.qty == pytest.approx(2.0)
+        assert intent.symbol == "BTC/USDT"
+        assert intent.side == "buy"
+        assert intent.meta["execution_id"] == execution_id
+        assert intent.meta["replanned"] is True
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_remaining_slices_with_divergence() -> None:
+    """Verify replan_remaining_slices adjusts when fills diverge from expected."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="ETH/USDT",
+        side="sell",
+        total_quantity=10.0,
+        duration_seconds=500,
+        params={},
+    )
+
+    # Get original plan (uniform: 2.0 per slice)
+    original_intents = await executor.plan_execution(algo)
+
+    # Simulate fills for first 2 slices with SIGNIFICANT divergence
+    fills = [
+        FillEvent(
+            order_id=original_intents[0].id,
+            symbol="ETH/USDT",
+            side="sell",
+            qty=0.8,  # Only 40% of expected (2.0 expected, 0.8 actual)
+            price=3000.0,
+            ts_fill_ns=original_intents[0].ts_local_ns,
+            fee=0.5,
+            meta=original_intents[0].meta,
+        ),
+        FillEvent(
+            order_id=original_intents[1].id,
+            symbol="ETH/USDT",
+            side="sell",
+            qty=1.2,  # 60% of expected (2.0 expected, 1.2 actual)
+            price=3010.0,
+            ts_fill_ns=original_intents[1].ts_local_ns,
+            fee=0.6,
+            meta=original_intents[1].meta,
+        ),
+    ]
+
+    # Replan remaining slices
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # Should have 3 remaining slices
+    assert len(adjusted_intents) == 3
+
+    # Actual fills = 0.8 + 1.2 = 2.0
+    # Expected fills = 0.2 + 0.2 = 0.4 (as fraction of total 10)
+    # Actual as fraction = 2.0 / 10 = 0.2
+    # Divergence = |0.2 - 0.4| / 0.4 = 0.5 (50%) > 10% threshold
+
+    # Remaining quantity = 10 - 2.0 = 8.0
+    # Should redistribute uniformly across 3 remaining slices
+    # 8.0 / 3 ≈ 2.667 each
+
+    total_remaining_qty = sum(intent.qty for intent in adjusted_intents)
+    assert total_remaining_qty == pytest.approx(8.0)
+
+    # Each slice should get roughly equal weight (uniform rebalancing)
+    for intent in adjusted_intents:
+        assert intent.qty == pytest.approx(8.0 / 3)
+        assert intent.meta["replanned"] is True
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_remaining_slices_preserves_metadata() -> None:
+    """Verify replan_remaining_slices preserves critical metadata fields."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    # Mock volume data for non-uniform weights
+    df = pd.DataFrame(
+        {
+            "volume": [100, 200, 300, 200, 100],  # Peak in middle
+            "high": [50000, 51000, 52000, 51000, 50000],
+            "low": [49000, 50000, 51000, 50000, 49000],
+            "close": [49500, 50500, 51500, 50500, 49500],
+            "ts_open": [i * 1_000_000_000 for i in range(5)],
+        }
+    )
+    data_reader.read_ohlcv.return_value = df
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="limit",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=5.0,
+        duration_seconds=500,
+        params={"limit_price": 50000.0},
+    )
+
+    # Get original plan
+    original_intents = await executor.plan_execution(algo)
+
+    # Capture original benchmark_vwap
+    original_benchmark = original_intents[0].meta["benchmark_vwap"]
+
+    # Simulate fill for first slice only
+    fills = [
+        FillEvent(
+            order_id=original_intents[0].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=original_intents[0].qty,
+            price=50000.0,
+            ts_fill_ns=original_intents[0].ts_local_ns,
+            fee=5.0,
+            meta=original_intents[0].meta,
+        ),
+    ]
+
+    # Replan remaining slices
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # Verify metadata preserved
+    execution_id = original_intents[0].meta["execution_id"]
+    for intent in adjusted_intents:
+        assert intent.meta["execution_id"] == execution_id
+        assert intent.meta["algo_type"] == "VWAP"
+        assert intent.meta["benchmark_vwap"] == original_benchmark
+        assert "volume_weight" in intent.meta
+        assert "slice_id" in intent.meta
+        assert "slice_idx" in intent.meta
+        assert intent.meta["replanned"] is True
+
+    # Verify limit price preserved
+    for intent in adjusted_intents:
+        assert intent.limit_price == 50000.0

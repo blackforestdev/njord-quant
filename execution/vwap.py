@@ -11,7 +11,7 @@ import uuid
 from typing import TYPE_CHECKING, Literal
 
 from core.bus import BusProto
-from core.contracts import OrderIntent
+from core.contracts import FillEvent, OrderIntent
 from execution.base import BaseExecutor
 from execution.contracts import ExecutionAlgorithm, ExecutionReport
 
@@ -362,6 +362,7 @@ class VWAPExecutor(BaseExecutor):
         original_weights: list[float],
         fills_per_slice: dict[int, float],
         current_slice_idx: int,
+        total_quantity: float,
     ) -> list[float]:
         """Recalculate weights for remaining slices based on actual fills.
 
@@ -369,9 +370,10 @@ class VWAPExecutor(BaseExecutor):
         from expected profile.
 
         Args:
-            original_weights: Original volume weights for all slices
-            fills_per_slice: Actual fill quantities by slice index
+            original_weights: Original volume weights for all slices (sum to 1.0)
+            fills_per_slice: Actual fill quantities by slice index (absolute quantities)
             current_slice_idx: Current slice index (next slice to execute)
+            total_quantity: Total quantity for the execution (to normalize fills)
 
         Returns:
             Adjusted weights for remaining slices (current_slice_idx onwards)
@@ -381,9 +383,12 @@ class VWAPExecutor(BaseExecutor):
             redistributes remaining quantity across remaining slices using
             original volume profile weights.
         """
-        # Calculate expected vs actual cumulative fills
+        # Calculate expected cumulative as fraction of total
         expected_cumulative = sum(original_weights[:current_slice_idx])
-        actual_cumulative = sum(fills_per_slice.values())
+
+        # Calculate actual cumulative as fraction of total (normalize fills)
+        actual_cumulative_qty = sum(fills_per_slice.values())
+        actual_cumulative = actual_cumulative_qty / total_quantity if total_quantity > 0 else 0.0
 
         # If divergence is significant (>10%), rebalance remaining weights
         if expected_cumulative > 0:
@@ -405,3 +410,111 @@ class VWAPExecutor(BaseExecutor):
         # Fallback: uniform distribution
         remaining_count = self.slice_count - current_slice_idx
         return [1.0 / remaining_count] * remaining_count if remaining_count > 0 else []
+
+    async def replan_remaining_slices(
+        self,
+        original_intents: list[OrderIntent],
+        fills: list[FillEvent],
+        algo: ExecutionAlgorithm,
+    ) -> list[OrderIntent]:
+        """Dynamically adjust remaining slices based on actual fills.
+
+        Implements the "Dynamically adjust if actual volume diverges" requirement
+        by recalculating remaining slice quantities when fills deviate from expected.
+
+        Args:
+            original_intents: Original OrderIntent list from plan_execution
+            fills: FillEvent list received so far
+            algo: Original ExecutionAlgorithm configuration
+
+        Returns:
+            Adjusted OrderIntent list for remaining (unfilled) slices
+
+        Note:
+            This method should be called by orchestrator after each fill batch
+            to detect divergence and replan remaining execution.
+        """
+
+        # Extract execution_id from first intent
+        if not original_intents:
+            return []
+
+        execution_id = original_intents[0].meta["execution_id"]
+
+        # Build fills_per_slice map
+        fills_per_slice: dict[int, float] = {}
+        for fill in fills:
+            if fill.meta.get("execution_id") == execution_id:
+                slice_idx = fill.meta.get("slice_idx")
+                if slice_idx is not None:
+                    fills_per_slice[slice_idx] = fills_per_slice.get(slice_idx, 0.0) + fill.qty
+
+        # Find current slice index (first unfilled slice)
+        current_slice_idx = 0
+        for i in range(len(original_intents)):
+            if i not in fills_per_slice:
+                current_slice_idx = i
+                break
+        else:
+            # All slices filled
+            return []
+
+        # Extract original weights from intents
+        original_weights = [intent.meta["volume_weight"] for intent in original_intents]
+
+        # Recalculate remaining weights
+        adjusted_weights = self.recalculate_remaining_weights(
+            original_weights=original_weights,
+            fills_per_slice=fills_per_slice,
+            current_slice_idx=current_slice_idx,
+            total_quantity=algo.total_quantity,
+        )
+
+        # Calculate remaining quantity
+        filled_quantity = sum(fills_per_slice.values())
+        remaining_quantity = algo.total_quantity - filled_quantity
+
+        # Get limit price and benchmark from original intents
+        limit_price_base = original_intents[current_slice_idx].limit_price
+        benchmark_vwap = original_intents[current_slice_idx].meta.get("benchmark_vwap")
+
+        # Calculate remaining time and interval
+        original_interval_ns = (
+            original_intents[1].ts_local_ns - original_intents[0].ts_local_ns
+            if len(original_intents) > 1
+            else (algo.duration_seconds * 1_000_000_000) // self.slice_count
+        )
+
+        # Current time
+        current_ts_ns = int(time.time() * 1e9)
+
+        # Generate adjusted intents for remaining slices
+        adjusted_intents: list[OrderIntent] = []
+        for i, weight in enumerate(adjusted_weights):
+            slice_idx = current_slice_idx + i
+            slice_id = f"{execution_id}_slice_{slice_idx}"
+            slice_qty = remaining_quantity * weight
+            scheduled_ts_ns = current_ts_ns + (i * original_interval_ns)
+
+            intent = OrderIntent(
+                id=slice_id,
+                ts_local_ns=scheduled_ts_ns,
+                strategy_id=self.strategy_id,
+                symbol=algo.symbol,
+                side=algo.side,
+                type=self.order_type,
+                qty=slice_qty,
+                limit_price=limit_price_base,
+                meta={
+                    "execution_id": execution_id,
+                    "slice_id": slice_id,
+                    "algo_type": "VWAP",
+                    "slice_idx": slice_idx,
+                    "volume_weight": weight,
+                    "benchmark_vwap": benchmark_vwap,
+                    "replanned": True,  # Mark as replanned
+                },
+            )
+            adjusted_intents.append(intent)
+
+        return adjusted_intents
