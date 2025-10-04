@@ -45,11 +45,24 @@ async def test_twap_plan_execution_basic() -> None:
 
     intents = await executor.plan_execution(algo)
 
-    # Should return 5 intents (one per slice)
-    assert len(intents) == 5
+    # Should return 10 intents total (5 execution + 5 cancel)
+    assert len(intents) == 10
 
     # All intents should be OrderIntent
     assert all(isinstance(intent, OrderIntent) for intent in intents)
+
+    # Verify split
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+    cancel_intents = [intent for intent in intents if intent.qty == 0]
+    assert len(execution_intents) == 5
+    assert len(cancel_intents) == 5
+
+    for i, cancel_intent in enumerate(cancel_intents):
+        assert cancel_intent.qty == 0.0
+        assert cancel_intent.meta["action"] == "cancel"
+        assert cancel_intent.meta["slice_idx"] == i
+        assert cancel_intent.meta["execution_id"] == execution_intents[i].meta["execution_id"]
+        assert cancel_intent.meta["target_slice_id"] == execution_intents[i].meta["slice_id"]
 
 
 @pytest.mark.asyncio
@@ -68,13 +81,15 @@ async def test_twap_plan_execution_quantity_distribution() -> None:
 
     intents = await executor.plan_execution(algo)
 
-    # Each slice should have equal quantity
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+
+    # Each execution slice should have equal quantity
     expected_qty = 5.0 / 10  # 0.5
-    for intent in intents:
+    for intent in execution_intents:
         assert intent.qty == pytest.approx(expected_qty)
 
     # Total quantity should match
-    total_qty = sum(intent.qty for intent in intents)
+    total_qty = sum(intent.qty for intent in execution_intents)
     assert total_qty == pytest.approx(5.0)
 
 
@@ -94,13 +109,23 @@ async def test_twap_plan_execution_scheduling() -> None:
 
     intents = await executor.plan_execution(algo)
 
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+    cancel_intents = [intent for intent in intents if intent.qty == 0]
+
     # Expected interval: 400 seconds / 4 slices = 100 seconds = 100_000_000_000 ns
     expected_interval_ns = 100_000_000_000
 
-    # Check intervals between consecutive slices
-    for i in range(len(intents) - 1):
-        interval = intents[i + 1].ts_local_ns - intents[i].ts_local_ns
+    # Check intervals between consecutive execution slices
+    for i in range(len(execution_intents) - 1):
+        interval = execution_intents[i + 1].ts_local_ns - execution_intents[i].ts_local_ns
         assert interval == expected_interval_ns
+
+    cancel_timestamps = {cancel.ts_local_ns for cancel in cancel_intents}
+    assert len(cancel_timestamps) == 1
+    cancel_ts = cancel_timestamps.pop()
+    assert cancel_ts - execution_intents[0].ts_local_ns == expected_interval_ns * len(
+        execution_intents
+    )
 
 
 @pytest.mark.asyncio
@@ -119,14 +144,16 @@ async def test_twap_plan_execution_meta_packing() -> None:
 
     intents = await executor.plan_execution(algo)
 
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+
     # All intents should have same execution_id
-    execution_ids = {intent.meta["execution_id"] for intent in intents}
+    execution_ids = {intent.meta["execution_id"] for intent in execution_intents}
     assert len(execution_ids) == 1  # All slices share same execution_id
 
     execution_id = execution_ids.pop()
 
     # Check each slice has correct metadata
-    for i, intent in enumerate(intents):
+    for i, intent in enumerate(execution_intents):
         assert intent.meta["execution_id"] == execution_id
         assert intent.meta["slice_id"] == f"{execution_id}_slice_{i}"
         assert intent.meta["algo_type"] == "TWAP"
@@ -235,8 +262,10 @@ async def test_twap_plan_execution_limit_price_from_params() -> None:
 
     intents = await executor.plan_execution(algo)
 
-    # All intents should use the limit_price from params
-    for intent in intents:
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+
+    # All execution intents should use the limit_price from params
+    for intent in execution_intents:
         assert intent.type == "limit"
         assert intent.limit_price == 50000.0
 
@@ -257,7 +286,9 @@ async def test_twap_plan_execution_intent_attributes() -> None:
 
     intents = await executor.plan_execution(algo)
 
-    for intent in intents:
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+
+    for intent in execution_intents:
         assert intent.strategy_id == "test_strat"
         assert intent.symbol == "ETH/USDT"
         assert intent.side == "sell"
@@ -272,40 +303,39 @@ async def test_twap_monitor_fills_complete() -> None:
     # Mock bus
     bus = MagicMock()
 
-    # Create mock fills
-    execution_id = "twap_test123"
-    fills = [
-        FillEvent(
-            order_id=f"{execution_id}_slice_0",
-            symbol="BTC/USDT",
-            side="buy",
-            qty=0.5,
-            price=50000.0,
-            ts_fill_ns=int(time.time() * 1e9),
-            fee=7.5,
-            meta={"execution_id": execution_id, "slice_id": f"{execution_id}_slice_0"},
-        ),
-        FillEvent(
-            order_id=f"{execution_id}_slice_1",
-            symbol="BTC/USDT",
-            side="buy",
-            qty=0.5,
-            price=50100.0,
-            ts_fill_ns=int(time.time() * 1e9),
-            fee=7.5,
-            meta={"execution_id": execution_id, "slice_id": f"{execution_id}_slice_1"},
-        ),
-        FillEvent(
-            order_id=f"{execution_id}_slice_2",
-            symbol="BTC/USDT",
-            side="buy",
-            qty=0.5,
-            price=50200.0,
-            ts_fill_ns=int(time.time() * 1e9),
-            fee=7.5,
-            meta={"execution_id": execution_id, "slice_id": f"{execution_id}_slice_2"},
-        ),
-    ]
+    algo = ExecutionAlgorithm(
+        algo_type="TWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=1.5,
+        duration_seconds=300,
+        params={},
+    )
+
+    intents = await executor.plan_execution(algo)
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+    execution_id = execution_intents[0].meta["execution_id"]
+
+    # Build fills directly from planned intents to verify metadata round-trip
+    fills: list[FillEvent] = []
+    for idx, intent in enumerate(execution_intents):
+        meta = intent.meta.copy()
+        fills.append(
+            FillEvent(
+                order_id=intent.id,
+                symbol=intent.symbol,
+                side=intent.side,
+                qty=intent.qty,
+                price=50_000.0 + idx * 100.0,
+                ts_fill_ns=intent.ts_local_ns + 1_000,
+                fee=7.5,
+                meta=meta,
+            )
+        )
+        # Metadata should contain identifiers for round-trip tracking
+        assert meta["execution_id"] == intent.meta["execution_id"]
+        assert meta["slice_id"] == intent.meta["slice_id"]
+        assert meta["slice_idx"] == intent.meta["slice_idx"]
 
     # Mock async generator for fills
     async def mock_fills() -> AsyncIterator[FillEvent]:
@@ -318,15 +348,15 @@ async def test_twap_monitor_fills_complete() -> None:
         report = await executor._monitor_fills(
             bus=bus,
             execution_id=execution_id,
-            total_quantity=1.5,
-            symbol="BTC/USDT",
+            total_quantity=algo.total_quantity,
+            symbol=algo.symbol,
         )
 
         # Verify report
         assert report.execution_id == execution_id
         assert report.symbol == "BTC/USDT"
-        assert report.total_quantity == 1.5
-        assert report.filled_quantity == 1.5
+        assert report.total_quantity == algo.total_quantity
+        assert report.filled_quantity == algo.total_quantity
         assert report.remaining_quantity == 0.0
         assert report.avg_fill_price == pytest.approx(50100.0)  # Weighted average
         assert report.total_fees == 22.5
@@ -414,6 +444,9 @@ async def test_twap_intent_id_matches_slice_id() -> None:
 
     intents = await executor.plan_execution(algo)
 
+    # Filter out cancel intents (qty=0) for this test
+    execution_intents = [intent for intent in intents if intent.qty > 0]
+
     # Verify intent.id matches meta.slice_id for fill tracking
-    for intent in intents:
+    for intent in execution_intents:
         assert intent.id == intent.meta["slice_id"]

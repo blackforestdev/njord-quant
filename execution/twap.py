@@ -111,6 +111,19 @@ class TWAPExecutor(BaseExecutor):
             )
             intents.append(intent)
 
+        # Generate cancel intents for unfilled slices at end of duration
+        # These are scheduled after the execution window to clean up any unfilled orders
+        end_ts_ns = start_ts_ns + (algo.duration_seconds * 1_000_000_000)
+        for i in range(self.slice_count):
+            cancel_intent = self._create_cancel_intent(
+                execution_id=execution_id,
+                slice_idx=i,
+                symbol=algo.symbol,
+                side=algo.side,
+                scheduled_ts_ns=end_ts_ns,
+            )
+            intents.append(cancel_intent)
+
         return intents
 
     def _create_slice_intent(
@@ -156,6 +169,54 @@ class TWAPExecutor(BaseExecutor):
             type=self.order_type,
             qty=quantity,
             limit_price=limit_price,
+            meta=meta,
+        )
+
+    def _create_cancel_intent(
+        self,
+        execution_id: str,
+        slice_idx: int,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        scheduled_ts_ns: int,
+    ) -> OrderIntent:
+        """Create cancel OrderIntent for a slice.
+
+        Cancel intents are represented as OrderIntent with qty=0 and special
+        metadata indicating the cancellation action and target slice.
+
+        Args:
+            execution_id: Unique execution identifier
+            slice_idx: Slice index to cancel
+            symbol: Trading pair symbol
+            side: Order side (buy or sell)
+            scheduled_ts_ns: When to execute cancellation (nanoseconds)
+
+        Returns:
+            OrderIntent representing cancellation request
+        """
+        slice_id = f"{execution_id}_slice_{slice_idx}"
+        cancel_id = f"{slice_id}_cancel"
+
+        # Pack cancellation metadata
+        meta = {
+            "execution_id": execution_id,
+            "slice_id": slice_id,
+            "algo_type": "TWAP",
+            "slice_idx": slice_idx,
+            "action": "cancel",
+            "target_slice_id": slice_id,
+        }
+
+        return OrderIntent(
+            id=cancel_id,
+            ts_local_ns=scheduled_ts_ns,
+            strategy_id=self.strategy_id,
+            symbol=symbol,
+            side=side,
+            type="market",  # Cancel requests use market type
+            qty=0.0,  # Zero quantity indicates cancellation
+            limit_price=None,
             meta=meta,
         )
 
