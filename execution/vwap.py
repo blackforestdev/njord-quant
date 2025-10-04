@@ -511,17 +511,38 @@ class VWAPExecutor(BaseExecutor):
         current_ts_ns = int(time.time() * 1e9)
 
         # Generate adjusted intents for remaining slices
+        # CRITICAL: Must cap each slice at its remaining capacity to avoid overshoot
         adjusted_intents: list[OrderIntent] = []
+        unallocated_qty = remaining_quantity  # Track quantity still to allocate
+
         for i, weight in enumerate(adjusted_weights):
             slice_idx = current_slice_idx + i
-            # For virtual slices beyond original plan, use suffix "residual_N"
-            if slice_idx >= len(original_intents):
-                slice_id = f"{execution_id}_residual_{i}"
-            else:
-                slice_id = f"{execution_id}_slice_{slice_idx}"
 
-            slice_qty = remaining_quantity * weight
+            # Calculate this slice's target quantity based on weight
+            target_qty = remaining_quantity * weight
+
+            # For slices within original plan, cap at remaining capacity
+            if slice_idx < len(original_intents):
+                original_qty = original_intents[slice_idx].qty
+                already_filled = fills_per_slice.get(slice_idx, 0.0)
+                capacity_remaining = max(original_qty - already_filled, 0.0)
+
+                # Cap target at capacity to prevent overshoot
+                slice_qty = min(target_qty, capacity_remaining)
+
+                # Use same slice_id as original to maintain tracking
+                slice_id = f"{execution_id}_slice_{slice_idx}"
+            else:
+                # Virtual residual slices beyond original plan - no cap
+                slice_qty = target_qty
+                slice_id = f"{execution_id}_residual_{i}"
+
+            # Skip slices with zero quantity
+            if slice_qty <= 0.0:
+                continue
+
             scheduled_ts_ns = current_ts_ns + (i * original_interval_ns)
+            unallocated_qty -= slice_qty
 
             intent = OrderIntent(
                 id=slice_id,
@@ -543,5 +564,33 @@ class VWAPExecutor(BaseExecutor):
                 },
             )
             adjusted_intents.append(intent)
+
+        # If unallocated quantity remains (due to caps), create final residual slice
+        # This handles edge case where all original slices hit capacity but qty remains
+        if unallocated_qty > 0.001:  # Small tolerance for floating point
+            residual_slice_id = f"{execution_id}_residual_final"
+            scheduled_ts_ns = current_ts_ns + (len(adjusted_intents) * original_interval_ns)
+
+            residual_intent = OrderIntent(
+                id=residual_slice_id,
+                ts_local_ns=scheduled_ts_ns,
+                strategy_id=self.strategy_id,
+                symbol=algo.symbol,
+                side=algo.side,
+                type=self.order_type,
+                qty=unallocated_qty,
+                limit_price=limit_price_base,
+                meta={
+                    "execution_id": execution_id,
+                    "slice_id": residual_slice_id,
+                    "algo_type": "VWAP",
+                    "slice_idx": len(original_intents),  # Beyond original plan
+                    "volume_weight": unallocated_qty / remaining_quantity,
+                    "benchmark_vwap": benchmark_vwap,
+                    "replanned": True,
+                    "residual": True,  # Mark as overflow residual
+                },
+            )
+            adjusted_intents.append(residual_intent)
 
         return adjusted_intents

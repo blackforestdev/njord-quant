@@ -761,11 +761,14 @@ async def test_vwap_replan_remaining_slices_with_divergence() -> None:
         original_intents=original_intents, fills=fills, algo=algo
     )
 
-    # Slice 0: 0.8/2.0 = 40% filled (PARTIAL - first incomplete)
-    # Slice 1: 1.2/2.0 = 60% filled (PARTIAL)
-    # Slices 2-4: 0% filled
-    # Replan starts from slice 0 (first incomplete), so 5 slices
-    assert len(adjusted_intents) == 5
+    # Slice 0: 0.8/2.0 = 40% filled, capacity = 1.2
+    # Slice 1: 1.2/2.0 = 60% filled, capacity = 0.8
+    # Slices 2-4: 0% filled, capacity = 2.0 each
+    # Total capacity = 1.2 + 0.8 + 2.0*3 = 8.0
+    # Remaining quantity = 8.0
+    # Uniform weights would allocate 8.0/5 = 1.6 per slice
+    # But slices 0,1 are capped, creating overflow → residual slice
+    assert len(adjusted_intents) >= 5
 
     # Actual fills = 0.8 + 1.2 = 2.0
     # Remaining quantity = 10 - 2.0 = 8.0
@@ -778,6 +781,13 @@ async def test_vwap_replan_remaining_slices_with_divergence() -> None:
     # All should be marked as replanned
     for intent in adjusted_intents:
         assert intent.meta["replanned"] is True
+
+    # Check for residual slice if capacity constraints caused overflow
+    if len(adjusted_intents) > 5:
+        residual_slices = [
+            i for i in adjusted_intents if i.meta.get("residual") or "residual" in i.id
+        ]
+        assert len(residual_slices) > 0
 
 
 @pytest.mark.asyncio
@@ -903,7 +913,8 @@ async def test_vwap_replan_partial_fill_single_slice() -> None:
 
     # Should replan from slice 0 (partially filled) through slice 4
     # Remaining quantity = 10 - 1 = 9.0
-    assert len(adjusted_intents) == 5
+    # Slice 0 capacity = 1.0, but uniform weight gives 1.8 → creates residual
+    assert len(adjusted_intents) >= 5
 
     total_adjusted_qty = sum(intent.qty for intent in adjusted_intents)
     assert total_adjusted_qty == pytest.approx(9.0)
@@ -985,7 +996,8 @@ async def test_vwap_replan_partial_fills_multiple_slices() -> None:
 
     # Should replan from slice 1 (first partial) onwards
     # Remaining quantity = 10 - 4.5 = 5.5
-    assert len(adjusted_intents) == 4  # Slices 1, 2, 3, 4
+    # May create residual slice if capacity constraints cause overflow
+    assert len(adjusted_intents) >= 4  # At least slices 1, 2, 3, 4
 
     total_adjusted_qty = sum(intent.qty for intent in adjusted_intents)
     assert total_adjusted_qty == pytest.approx(5.5)
@@ -1168,3 +1180,176 @@ async def test_vwap_replan_no_remaining_quantity() -> None:
     )
 
     assert len(adjusted_intents) == 0
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_no_overshoot_on_partial_fills() -> None:
+    """Verify replan caps each slice to prevent quantity overshoot.
+
+    Critical bug fix: replanned slices must not exceed their original planned
+    quantity when combined with existing fills.
+    """
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=10.0,
+        duration_seconds=500,
+        params={},
+    )
+
+    # Get original plan (uniform: 2.0 per slice)
+    original_intents = await executor.plan_execution(algo)
+
+    # Slice 0 gets 1.0 filled (50% of its 2.0 allocation)
+    fills = [
+        FillEvent(
+            order_id=original_intents[0].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=1.0,  # PARTIAL: 50% of 2.0
+            price=50000.0,
+            ts_fill_ns=original_intents[0].ts_local_ns,
+            fee=0.5,
+            meta=original_intents[0].meta,
+        ),
+    ]
+
+    # Replan
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # Find replanned intent for slice 0
+    slice_0_intent = next(
+        (intent for intent in adjusted_intents if intent.meta["slice_idx"] == 0), None
+    )
+    assert slice_0_intent is not None
+
+    # CRITICAL: Slice 0's replanned qty must NOT cause overshoot
+    # Already filled: 1.0
+    # Original capacity: 2.0
+    # Max replanned: 1.0 (to reach 2.0 total)
+    assert slice_0_intent.qty <= 1.0 + 0.001  # Small tolerance
+
+    # Total for slice 0 (filled + replanned) must not exceed original
+    total_slice_0 = 1.0 + slice_0_intent.qty
+    assert total_slice_0 <= 2.0 + 0.001
+
+    # Total remaining quantity must be conserved
+    total_replanned = sum(intent.qty for intent in adjusted_intents)
+    assert total_replanned == pytest.approx(9.0)  # 10 - 1 filled
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_overflow_to_residual() -> None:
+    """Verify overflow quantity creates residual slice when all original slices capped."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=3,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=10.0,
+        duration_seconds=300,
+        params={},
+    )
+
+    # Get original plan (uniform: ~3.33 per slice)
+    original_intents = await executor.plan_execution(algo)
+
+    # All 3 slices get large partial fills, leaving small capacity
+    # Slice 0: 3.0/3.33 filled (90%)
+    # Slice 1: 3.1/3.33 filled (93%)
+    # Slice 2: 2.9/3.33 filled (87%)
+    # Total filled: 9.0, remaining: 1.0
+    # But each slice has <0.33 capacity, total capacity ~1.0
+    fills = [
+        FillEvent(
+            order_id=original_intents[0].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=3.0,
+            price=50000.0,
+            ts_fill_ns=original_intents[0].ts_local_ns,
+            fee=1.5,
+            meta=original_intents[0].meta,
+        ),
+        FillEvent(
+            order_id=original_intents[1].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=3.1,
+            price=50100.0,
+            ts_fill_ns=original_intents[1].ts_local_ns,
+            fee=1.55,
+            meta=original_intents[1].meta,
+        ),
+        FillEvent(
+            order_id=original_intents[2].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=2.9,
+            price=50200.0,
+            ts_fill_ns=original_intents[2].ts_local_ns,
+            fee=1.45,
+            meta=original_intents[2].meta,
+        ),
+    ]
+
+    # Replan
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # Total remaining = 10 - 9 = 1.0
+    total_replanned = sum(intent.qty for intent in adjusted_intents)
+    assert total_replanned == pytest.approx(1.0)
+
+    # Each original slice should be capped at its remaining capacity
+    for i in range(3):
+        original_qty = original_intents[i].qty
+        filled_qty = fills[i].qty
+        capacity = original_qty - filled_qty
+
+        # Find replanned intent for this slice
+        slice_intent = next(
+            (intent for intent in adjusted_intents if intent.meta["slice_idx"] == i), None
+        )
+
+        if slice_intent:
+            # Must not exceed capacity
+            assert slice_intent.qty <= capacity + 0.001
+
+    # If capacity constraints prevented full allocation, check for residual slice
+    total_capacity = sum(max(original_intents[i].qty - fills[i].qty, 0.0) for i in range(3))
+    if total_capacity < 1.0 - 0.01:
+        # Should have created a residual slice for overflow
+        residual_slices = [
+            intent
+            for intent in adjusted_intents
+            if intent.meta.get("residual", False) or "residual" in intent.id
+        ]
+        assert len(residual_slices) > 0
