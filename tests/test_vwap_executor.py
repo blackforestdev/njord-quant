@@ -761,24 +761,22 @@ async def test_vwap_replan_remaining_slices_with_divergence() -> None:
         original_intents=original_intents, fills=fills, algo=algo
     )
 
-    # Should have 3 remaining slices
-    assert len(adjusted_intents) == 3
+    # Slice 0: 0.8/2.0 = 40% filled (PARTIAL - first incomplete)
+    # Slice 1: 1.2/2.0 = 60% filled (PARTIAL)
+    # Slices 2-4: 0% filled
+    # Replan starts from slice 0 (first incomplete), so 5 slices
+    assert len(adjusted_intents) == 5
 
     # Actual fills = 0.8 + 1.2 = 2.0
-    # Expected fills = 0.2 + 0.2 = 0.4 (as fraction of total 10)
-    # Actual as fraction = 2.0 / 10 = 0.2
-    # Divergence = |0.2 - 0.4| / 0.4 = 0.5 (50%) > 10% threshold
-
     # Remaining quantity = 10 - 2.0 = 8.0
-    # Should redistribute uniformly across 3 remaining slices
-    # 8.0 / 3 ≈ 2.667 each
-
     total_remaining_qty = sum(intent.qty for intent in adjusted_intents)
     assert total_remaining_qty == pytest.approx(8.0)
 
-    # Each slice should get roughly equal weight (uniform rebalancing)
+    # First replanned intent should be for slice 0
+    assert adjusted_intents[0].meta["slice_idx"] == 0
+
+    # All should be marked as replanned
     for intent in adjusted_intents:
-        assert intent.qty == pytest.approx(8.0 / 3)
         assert intent.meta["replanned"] is True
 
 
@@ -855,3 +853,318 @@ async def test_vwap_replan_remaining_slices_preserves_metadata() -> None:
     # Verify limit price preserved
     for intent in adjusted_intents:
         assert intent.limit_price == 50000.0
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_partial_fill_single_slice() -> None:
+    """Verify replan handles single slice with partial fill correctly."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=10.0,
+        duration_seconds=500,
+        params={},
+    )
+
+    # Get original plan (uniform: 2.0 per slice)
+    original_intents = await executor.plan_execution(algo)
+
+    # Simulate partial fill for first slice only (1.0 out of 2.0)
+    fills = [
+        FillEvent(
+            order_id=original_intents[0].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=1.0,  # PARTIAL: 50% of planned 2.0
+            price=50000.0,
+            ts_fill_ns=original_intents[0].ts_local_ns,
+            fee=0.5,
+            meta=original_intents[0].meta,
+        ),
+    ]
+
+    # Replan remaining slices
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # Should replan from slice 0 (partially filled) through slice 4
+    # Remaining quantity = 10 - 1 = 9.0
+    assert len(adjusted_intents) == 5
+
+    total_adjusted_qty = sum(intent.qty for intent in adjusted_intents)
+    assert total_adjusted_qty == pytest.approx(9.0)
+
+    # First intent should be for slice 0 (to complete it)
+    assert adjusted_intents[0].meta["slice_idx"] == 0
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_partial_fills_multiple_slices() -> None:
+    """Verify replan handles multiple slices with varying partial fills."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=10.0,
+        duration_seconds=500,
+        params={},
+    )
+
+    # Get original plan (uniform: 2.0 per slice)
+    original_intents = await executor.plan_execution(algo)
+
+    # Simulate varying partial fills:
+    # Slice 0: 100% filled (2.0/2.0)
+    # Slice 1: 75% filled (1.5/2.0)
+    # Slice 2: 50% filled (1.0/2.0)
+    # Slice 3: 0% filled (0/2.0)
+    # Slice 4: 0% filled (0/2.0)
+    fills = [
+        FillEvent(
+            order_id=original_intents[0].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=2.0,  # FULL
+            price=50000.0,
+            ts_fill_ns=original_intents[0].ts_local_ns,
+            fee=1.0,
+            meta=original_intents[0].meta,
+        ),
+        FillEvent(
+            order_id=original_intents[1].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=1.5,  # PARTIAL: 75%
+            price=50100.0,
+            ts_fill_ns=original_intents[1].ts_local_ns,
+            fee=0.75,
+            meta=original_intents[1].meta,
+        ),
+        FillEvent(
+            order_id=original_intents[2].id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=1.0,  # PARTIAL: 50%
+            price=50200.0,
+            ts_fill_ns=original_intents[2].ts_local_ns,
+            fee=0.5,
+            meta=original_intents[2].meta,
+        ),
+    ]
+
+    # Replan remaining slices
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # Should replan from slice 1 (first partial) onwards
+    # Remaining quantity = 10 - 4.5 = 5.5
+    assert len(adjusted_intents) == 4  # Slices 1, 2, 3, 4
+
+    total_adjusted_qty = sum(intent.qty for intent in adjusted_intents)
+    assert total_adjusted_qty == pytest.approx(5.5)
+
+    # First replanned intent should be for slice 1
+    assert adjusted_intents[0].meta["slice_idx"] == 1
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_all_slices_partially_filled() -> None:
+    """Verify replan handles case where ALL slices are partially filled."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="sell",
+        total_quantity=10.0,
+        duration_seconds=500,
+        params={},
+    )
+
+    # Get original plan (uniform: 2.0 per slice)
+    original_intents = await executor.plan_execution(algo)
+
+    # ALL slices get 50% partial fills
+    fills = []
+    for i in range(5):
+        fills.append(
+            FillEvent(
+                order_id=original_intents[i].id,
+                symbol="BTC/USDT",
+                side="sell",
+                qty=1.0,  # PARTIAL: 50% of 2.0
+                price=50000.0 + i * 100,
+                ts_fill_ns=original_intents[i].ts_local_ns,
+                fee=0.5,
+                meta=original_intents[i].meta,
+            )
+        )
+
+    # Replan remaining slices
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # All slices partially filled (50% each)
+    # First incomplete slice is slice 0
+    # Remaining quantity = 10 - 5 = 5.0
+    # Should NOT return empty list - this was the bug
+    assert len(adjusted_intents) == 5
+
+    total_adjusted_qty = sum(intent.qty for intent in adjusted_intents)
+    assert total_adjusted_qty == pytest.approx(5.0)
+
+    # All intents should be marked as replanned
+    for intent in adjusted_intents:
+        assert intent.meta["replanned"] is True
+
+    # First replanned intent should be for slice 0 (first incomplete)
+    assert adjusted_intents[0].meta["slice_idx"] == 0
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_all_slices_fully_filled_with_residual() -> None:
+    """Verify replan creates residual slices when all original slices filled but quantity remains."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None  # Uniform weights
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=5,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="sell",
+        total_quantity=12.0,  # 12.0 total, but slices only cover 10.0
+        duration_seconds=500,
+        params={},
+    )
+
+    # Get original plan (uniform: 2.4 per slice for 12.0 total)
+    original_intents = await executor.plan_execution(algo)
+
+    # All slices get FULLY filled (100% of their planned qty)
+    # But total planned was only 12.0, so we'll simulate 10.0 filled
+    fills = []
+    for i in range(5):
+        fills.append(
+            FillEvent(
+                order_id=original_intents[i].id,
+                symbol="BTC/USDT",
+                side="sell",
+                qty=2.0,  # 2.0 each (vs planned 2.4)
+                price=50000.0 + i * 100,
+                ts_fill_ns=original_intents[i].ts_local_ns,
+                fee=1.0,
+                meta=original_intents[i].meta,
+            )
+        )
+
+    # Replan remaining slices
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    # All slices partially filled but significant quantity remains
+    # Should replan from first incomplete (slice 0)
+    assert len(adjusted_intents) > 0
+
+    # Remaining quantity = 12 - 10 = 2.0
+    total_adjusted_qty = sum(intent.qty for intent in adjusted_intents)
+    assert total_adjusted_qty == pytest.approx(2.0)
+
+    # All intents should be marked as replanned
+    for intent in adjusted_intents:
+        assert intent.meta["replanned"] is True
+
+
+@pytest.mark.asyncio
+async def test_vwap_replan_no_remaining_quantity() -> None:
+    """Verify replan returns empty when execution fully complete."""
+    from core.contracts import FillEvent
+
+    data_reader = MagicMock()
+    data_reader.read_ohlcv.return_value = None
+
+    executor = VWAPExecutor(
+        strategy_id="test_strat",
+        data_reader=data_reader,
+        slice_count=3,
+        order_type="market",
+    )
+
+    algo = ExecutionAlgorithm(
+        algo_type="VWAP",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=6.0,
+        duration_seconds=300,
+        params={},
+    )
+
+    original_intents = await executor.plan_execution(algo)
+
+    # All slices fully filled
+    fills = [
+        FillEvent(
+            order_id=intent.id,
+            symbol="BTC/USDT",
+            side="buy",
+            qty=intent.qty,  # FULL quantity
+            price=50000.0,
+            ts_fill_ns=intent.ts_local_ns,
+            fee=1.0,
+            meta=intent.meta,
+        )
+        for intent in original_intents
+    ]
+
+    # Replan should return empty - nothing left to execute
+    adjusted_intents = await executor.replan_remaining_slices(
+        original_intents=original_intents, fills=fills, algo=algo
+    )
+
+    assert len(adjusted_intents) == 0

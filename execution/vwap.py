@@ -441,7 +441,7 @@ class VWAPExecutor(BaseExecutor):
 
         execution_id = original_intents[0].meta["execution_id"]
 
-        # Build fills_per_slice map
+        # Build fills_per_slice map (slice_idx -> cumulative fill quantity)
         fills_per_slice: dict[int, float] = {}
         for fill in fills:
             if fill.meta.get("execution_id") == execution_id:
@@ -449,34 +449,56 @@ class VWAPExecutor(BaseExecutor):
                 if slice_idx is not None:
                     fills_per_slice[slice_idx] = fills_per_slice.get(slice_idx, 0.0) + fill.qty
 
-        # Find current slice index (first unfilled slice)
+        # Find current slice index (first NOT FULLY filled slice)
+        # Must compare actual fills vs planned quantity, not just check presence
         current_slice_idx = 0
         for i in range(len(original_intents)):
-            if i not in fills_per_slice:
+            filled_qty = fills_per_slice.get(i, 0.0)
+            planned_qty = original_intents[i].qty
+            # Slice is complete if filled >= planned (within small tolerance)
+            if filled_qty < planned_qty * 0.999:  # 0.1% tolerance for floating point
                 current_slice_idx = i
                 break
         else:
-            # All slices filled
-            return []
-
-        # Extract original weights from intents
-        original_weights = [intent.meta["volume_weight"] for intent in original_intents]
-
-        # Recalculate remaining weights
-        adjusted_weights = self.recalculate_remaining_weights(
-            original_weights=original_weights,
-            fills_per_slice=fills_per_slice,
-            current_slice_idx=current_slice_idx,
-            total_quantity=algo.total_quantity,
-        )
+            # All slices appear fully filled, but check if residual quantity remains
+            current_slice_idx = len(original_intents)
 
         # Calculate remaining quantity
         filled_quantity = sum(fills_per_slice.values())
         remaining_quantity = algo.total_quantity - filled_quantity
 
+        # If no remaining quantity, nothing to replan
+        if remaining_quantity <= 0.0:
+            return []
+
+        # Extract original weights from intents
+        original_weights = [intent.meta["volume_weight"] for intent in original_intents]
+
+        # If all slices have been attempted, replan remaining quantity uniformly
+        # across new "virtual" slices (residual distribution)
+        if current_slice_idx >= len(original_intents):
+            # All slices partially filled but quantity remains
+            # Create uniform distribution for remaining quantity
+            # Use same number of slices as original, or fewer if near completion
+            remaining_slice_count = max(1, self.slice_count // 2)  # Use half the original slices
+            adjusted_weights = [1.0 / remaining_slice_count] * remaining_slice_count
+            # Adjust current_slice_idx to start from end of original plan
+            current_slice_idx = len(original_intents)
+        else:
+            # Normal case: some slices not yet attempted or partially filled
+            # Recalculate remaining weights based on divergence
+            adjusted_weights = self.recalculate_remaining_weights(
+                original_weights=original_weights,
+                fills_per_slice=fills_per_slice,
+                current_slice_idx=current_slice_idx,
+                total_quantity=algo.total_quantity,
+            )
+
         # Get limit price and benchmark from original intents
-        limit_price_base = original_intents[current_slice_idx].limit_price
-        benchmark_vwap = original_intents[current_slice_idx].meta.get("benchmark_vwap")
+        # If current_slice_idx >= len, use last intent's values
+        reference_idx = min(current_slice_idx, len(original_intents) - 1)
+        limit_price_base = original_intents[reference_idx].limit_price
+        benchmark_vwap = original_intents[reference_idx].meta.get("benchmark_vwap")
 
         # Calculate remaining time and interval
         original_interval_ns = (
@@ -492,7 +514,12 @@ class VWAPExecutor(BaseExecutor):
         adjusted_intents: list[OrderIntent] = []
         for i, weight in enumerate(adjusted_weights):
             slice_idx = current_slice_idx + i
-            slice_id = f"{execution_id}_slice_{slice_idx}"
+            # For virtual slices beyond original plan, use suffix "residual_N"
+            if slice_idx >= len(original_intents):
+                slice_id = f"{execution_id}_residual_{i}"
+            else:
+                slice_id = f"{execution_id}_slice_{slice_idx}"
+
             slice_qty = remaining_quantity * weight
             scheduled_ts_ns = current_ts_ns + (i * original_interval_ns)
 
