@@ -197,6 +197,9 @@ class IcebergExecutor(BaseExecutor):
             "replenish_threshold": self.replenish_threshold,
         }
 
+        # Capture per-slice visible quantity for downstream fill reconciliation
+        meta["visible_qty"] = visible_qty
+
         # Include price_levels in metadata if multi-level mode
         if price_levels is not None and len(price_levels) > 1:
             meta["price_levels"] = price_levels
@@ -238,14 +241,57 @@ class IcebergExecutor(BaseExecutor):
         # Parse price levels (single or multiple)
         price_levels = self._parse_price_levels(algo.params)
 
-        # Track fills
+        # Track visible quantities per slice to guard against out-of-order fills
+        slice_visible_qty: dict[int, float] = {
+            0: algo.total_quantity * self.visible_ratio,
+        }
+
         filled_quantity = 0.0
         current_slice_idx = 0
-        current_visible_qty = algo.total_quantity * self.visible_ratio
+        current_visible_qty = slice_visible_qty[0]
         current_slice_filled = 0.0
 
         async for fill in self.track_fills(bus, execution_id):
             filled_quantity += fill.qty
+
+            # Extract slice index metadata (defaults to current slice)
+            meta_slice_idx = fill.meta.get("slice_idx")
+            if isinstance(meta_slice_idx, int):
+                target_slice_idx = meta_slice_idx
+            elif isinstance(meta_slice_idx, str):
+                try:
+                    target_slice_idx = int(meta_slice_idx)
+                except ValueError:
+                    target_slice_idx = current_slice_idx
+            else:
+                target_slice_idx = current_slice_idx
+
+            # Capture visible quantity from fill metadata where provided
+            fill_visible = fill.meta.get("visible_qty")
+            if isinstance(fill_visible, (int, float)):
+                slice_visible_qty.setdefault(target_slice_idx, float(fill_visible))
+
+            # Late fills from earlier slices should not impact current slice tracking
+            if target_slice_idx < current_slice_idx:
+                if filled_quantity >= algo.total_quantity:
+                    break
+                continue
+
+            # If fills arrive for a slice ahead of the one we are tracking, align state
+            if target_slice_idx > current_slice_idx:
+                current_slice_idx = target_slice_idx
+                current_visible_qty = slice_visible_qty.get(
+                    current_slice_idx,
+                    algo.total_quantity * self.visible_ratio,
+                )
+                current_slice_filled = 0.0
+
+            # Update visible quantity if we learned a more precise value for this slice
+            current_visible_qty = slice_visible_qty.get(
+                current_slice_idx,
+                current_visible_qty,
+            )
+
             current_slice_filled += fill.qty
 
             # Check if we've reached replenish threshold for current slice
@@ -278,6 +324,7 @@ class IcebergExecutor(BaseExecutor):
                         price_levels=price_levels,
                     )
 
+                    slice_visible_qty[current_slice_idx] = next_visible_qty
                     # Reset tracking for new slice
                     current_visible_qty = next_visible_qty
                     current_slice_filled = 0.0

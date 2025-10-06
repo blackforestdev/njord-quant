@@ -1,5 +1,6 @@
 """Tests for Iceberg executor (Phase 8.4)."""
 
+import asyncio
 import time
 from collections.abc import AsyncIterator
 from unittest.mock import MagicMock, patch
@@ -564,6 +565,7 @@ async def test_iceberg_metadata_round_trip() -> None:
     assert fills[0].meta["slice_idx"] == 0
     assert fills[0].meta["algo_type"] == "Iceberg"
     assert fills[0].meta["total_quantity"] == 4.0
+    assert fills[0].meta["visible_qty"] == pytest.approx(1.0)
 
     # Use generator to build fills dynamically based on replenishment intents
     replenish_intents_captured: list[OrderIntent] = []
@@ -688,6 +690,7 @@ async def test_iceberg_multi_price_levels_plan() -> None:
     # Metadata should include price_levels
     assert "price_levels" in intents[0].meta
     assert intents[0].meta["price_levels"] == [50000.0, 49900.0, 49800.0]
+    assert intents[0].meta["visible_qty"] == pytest.approx(2.0)
 
 
 @pytest.mark.asyncio
@@ -769,3 +772,93 @@ async def test_iceberg_multi_price_levels_replenish_rotation() -> None:
         assert replenish_intents[0].limit_price == 49900.0
         assert replenish_intents[1].limit_price == 49800.0
         assert replenish_intents[2].limit_price == 50000.0  # Verifies wrap-around
+
+
+@pytest.mark.asyncio
+async def test_iceberg_monitor_handles_out_of_order_fills() -> None:
+    """Verify late fills from completed slices do not trigger extra replenishments."""
+    executor = IcebergExecutor(strategy_id="test_strat", visible_ratio=0.5, replenish_threshold=0.5)
+
+    bus = MagicMock()
+
+    algo = ExecutionAlgorithm(
+        algo_type="Iceberg",
+        symbol="BTC/USDT",
+        side="buy",
+        total_quantity=4.0,
+        duration_seconds=3600,
+        params={"limit_price": 50000.0},
+    )
+
+    intents = await executor.plan_execution(algo)
+    initial_intent = intents[0]
+    execution_id = initial_intent.meta["execution_id"]
+
+    fill_queue: asyncio.Queue[FillEvent | None] = asyncio.Queue()
+
+    # Initial fill fully consumes first slice (visible qty = 2.0)
+    await fill_queue.put(
+        FillEvent(
+            order_id=initial_intent.id,
+            symbol=initial_intent.symbol,
+            side=initial_intent.side,
+            qty=2.0,
+            price=50000.0,
+            ts_fill_ns=initial_intent.ts_local_ns + 1_000,
+            fee=100.0,
+            meta=initial_intent.meta.copy(),
+        )
+    )
+
+    async def queue_fills() -> AsyncIterator[FillEvent]:
+        while True:
+            item = await fill_queue.get()
+            if item is None:
+                break
+            yield item
+
+    replenish_intents: list[OrderIntent] = []
+
+    with patch.object(executor, "track_fills", return_value=queue_fills()):
+        async for intent in executor._monitor_and_replenish(bus, execution_id, algo):
+            replenish_intents.append(intent)
+
+            if len(replenish_intents) == 1:
+                # Late fill from slice 0 (should not affect slice 1 tracking)
+                await fill_queue.put(
+                    FillEvent(
+                        order_id=initial_intent.id,
+                        symbol=initial_intent.symbol,
+                        side=initial_intent.side,
+                        qty=0.5,
+                        price=50000.0,
+                        ts_fill_ns=int(time.time() * 1e9),
+                        fee=25.0,
+                        meta=initial_intent.meta.copy(),
+                    )
+                )
+
+                # Legitimate fill for slice 1
+                await fill_queue.put(
+                    FillEvent(
+                        order_id=intent.id,
+                        symbol=intent.symbol,
+                        side=intent.side,
+                        qty=1.0,
+                        price=50000.0,
+                        ts_fill_ns=int(time.time() * 1e9),
+                        fee=50.0,
+                        meta=intent.meta.copy(),
+                    )
+                )
+
+            elif len(replenish_intents) == 2:
+                await fill_queue.put(None)
+                break
+
+    assert len(replenish_intents) == 2
+    assert replenish_intents[0].meta["slice_idx"] == 1
+    assert replenish_intents[1].meta["slice_idx"] == 2
+
+    # Ensure generator is drained if loop exited without sentinel
+    await fill_queue.put(None)
