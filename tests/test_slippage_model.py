@@ -105,13 +105,14 @@ class TestLinearSlippageModel:
         """Test validation of market_volume > 0."""
         model = LinearSlippageModel(impact_coefficient=0.001)
 
-        with pytest.raises(ValueError, match="market_volume must be > 0"):
-            model.calculate_slippage(
-                order_size=1000.0,
-                market_volume=0.0,
-                bid_ask_spread=0.10,
-                reference_price=100.0,
-            )
+        fallback = model.calculate_slippage(
+            order_size=1000.0,
+            market_volume=0.0,
+            bid_ask_spread=0.10,
+            reference_price=100.0,
+        )
+        expected_fallback = 100.0 * model.impact_coefficient + 0.10 / 2.0
+        assert abs(fallback - expected_fallback) < 1e-9
 
         with pytest.raises(ValueError, match="market_volume must be > 0"):
             model.calculate_slippage(
@@ -372,13 +373,14 @@ class TestSquareRootSlippageModel:
         """Test validation of market_volume > 0."""
         model = SquareRootSlippageModel(impact_coefficient=0.5)
 
-        with pytest.raises(ValueError, match="market_volume must be > 0"):
-            model.calculate_slippage(
-                order_size=1000.0,
-                market_volume=0.0,
-                bid_ask_spread=0.10,
-                reference_price=100.0,
-            )
+        fallback = model.calculate_slippage(
+            order_size=1000.0,
+            market_volume=0.0,
+            bid_ask_spread=0.10,
+            reference_price=100.0,
+        )
+        expected_fallback = 100.0 * model.impact_coefficient + 0.10 / 2.0
+        assert abs(fallback - expected_fallback) < 1e-9
 
     def test_validates_bid_ask_spread_non_negative(self) -> None:
         """Test validation of bid_ask_spread >= 0."""

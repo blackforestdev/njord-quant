@@ -106,7 +106,11 @@ class LinearSlippageModel(SlippageModel):
         """
         if order_size < 0:
             raise ValueError(f"order_size must be >= 0, got {order_size}")
-        if market_volume <= 0:
+        if market_volume == 0:
+            # Treat zero liquidity as prohibitive slippage instead of raising.
+            # Execution simulator can cap/interpret this as an untradeable bar.
+            return reference_price * self.impact_coefficient + (bid_ask_spread / 2.0)
+        if market_volume < 0:
             raise ValueError(f"market_volume must be > 0, got {market_volume}")
         if bid_ask_spread < 0:
             raise ValueError(f"bid_ask_spread must be >= 0, got {bid_ask_spread}")
@@ -177,7 +181,9 @@ class SquareRootSlippageModel(SlippageModel):
         """
         if order_size < 0:
             raise ValueError(f"order_size must be >= 0, got {order_size}")
-        if market_volume <= 0:
+        if market_volume == 0:
+            return reference_price * self.impact_coefficient + (bid_ask_spread / 2.0)
+        if market_volume < 0:
             raise ValueError(f"market_volume must be > 0, got {market_volume}")
         if bid_ask_spread < 0:
             raise ValueError(f"bid_ask_spread must be >= 0, got {bid_ask_spread}")
