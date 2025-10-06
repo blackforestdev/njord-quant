@@ -330,7 +330,7 @@ async def test_pov_monitor_and_slice_dynamic() -> None:
         algo_type="POV",
         symbol="ETH/USDT",
         side="sell",
-        total_quantity=100.0,
+        total_quantity=5000.0,
         duration_seconds=600,
         params={"limit_price": 3000.0, "measurement_period_seconds": 60},
     )
@@ -340,10 +340,8 @@ async def test_pov_monitor_and_slice_dynamic() -> None:
     assert len(intents) == 1
     execution_id = intents[0].meta["execution_id"]
 
-    # Setup bus
     bus = InMemoryBus()
 
-    # Start monitoring in background
     slice_intents: list[Any] = []
 
     async def collect_slices() -> None:
@@ -351,34 +349,66 @@ async def test_pov_monitor_and_slice_dynamic() -> None:
             slice_intents.append(intent)
 
     monitor_task = asyncio.create_task(collect_slices())
-
-    # Simulate fills
     await asyncio.sleep(0.01)
 
-    # Publish fill for initial slice (partial)
+    base_ts = int(time.time() * 1e9)
+    for i in range(5):
+        await bus.publish_json(
+            "md.trades.ETH/USDT",
+            {
+                "symbol": "ETH/USDT",
+                "qty": 1000.0,
+                "price": 3000.0,
+                "ts_local_ns": base_ts + (i * 1_000_000),
+            },
+        )
+
+    await asyncio.sleep(0.01)
+
     fill_1 = FillEvent(
         order_id=f"{execution_id}_slice_0",
         symbol="ETH/USDT",
         side="sell",
-        qty=20.0,
+        qty=500.0,
         price=3000.0,
         ts_fill_ns=int(time.time() * 1e9),
-        fee=60.0,
+        fee=150.0,
         meta={
             "execution_id": execution_id,
             "slice_id": f"{execution_id}_slice_0",
             "algo_type": "POV",
             "slice_idx": 0,
-            "total_quantity": 100.0,
+            "total_quantity": 5000.0,
             "target_pov": 0.2,
         },
     )
 
     await bus.publish_json("fills.new", {"fill": fill_1.__dict__})
-    await asyncio.sleep(0.01)
 
-    # Should generate next slice
-    # (simplified test - actual volume monitoring would be more complex)
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if slice_intents:
+            break
+
+    assert slice_intents, "Expected follow-on POV slice"
+    next_intent = slice_intents[0]
+    assert next_intent.meta["execution_id"] == execution_id
+    assert next_intent.meta["slice_idx"] == 1
+    assert next_intent.meta["slice_id"].endswith("_slice_1")
+    assert abs((next_intent.qty / 5000.0) - executor.target_pov) <= 0.05
+
+    follow_fill = FillEvent(
+        order_id=next_intent.id,
+        symbol=next_intent.symbol,
+        side=next_intent.side,
+        qty=next_intent.qty,
+        price=next_intent.limit_price or 3000.0,
+        ts_fill_ns=int(time.time() * 1e9),
+        fee=0.0,
+        meta=next_intent.meta,
+    )
+
+    assert follow_fill.meta["slice_id"] == next_intent.id
 
     # Cancel monitoring
     monitor_task.cancel()

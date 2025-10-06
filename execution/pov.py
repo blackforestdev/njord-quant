@@ -6,13 +6,15 @@ market volume at a target rate while monitoring real-time volume.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
+from collections import deque
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Literal
 
 from core.bus import BusProto
-from core.contracts import OrderIntent
+from core.contracts import FillEvent, OrderIntent
 from execution.base import BaseExecutor
 from execution.contracts import ExecutionAlgorithm
 
@@ -298,26 +300,39 @@ class POVExecutor(BaseExecutor):
             meta=meta,
         )
 
-    async def _monitor_volume(self, bus: BusProto, symbol: str) -> float:
-        """Monitor real-time market volume.
+    async def _monitor_volume(
+        self,
+        bus: BusProto,
+        symbol: str,
+        measurement_period_seconds: int,
+    ) -> AsyncIterator[float]:
+        """Yield rolling market volume using real-time trade data."""
 
-        Subscribes to market data (trades) and calculates volume in measurement period.
+        trade_topic = f"md.trades.{symbol}"
+        window_ns = measurement_period_seconds * 1_000_000_000
+        trades: deque[tuple[int, float]] = deque()
+        total_volume = 0.0
 
-        Args:
-            bus: Bus instance for subscribing to market data
-            symbol: Trading pair symbol
+        async for payload in bus.subscribe(trade_topic):
+            qty_raw = payload.get("qty") or payload.get("amount")
+            if qty_raw is None:
+                continue
+            try:
+                qty = float(qty_raw)
+            except (TypeError, ValueError):
+                continue
+            if qty <= 0.0:
+                continue
 
-        Returns:
-            Volume in last measurement period
+            ts_ns = int(payload.get("ts_local_ns") or time.time() * 1e9)
+            trades.append((ts_ns, qty))
+            total_volume += qty
 
-        Note:
-            This is a simplified implementation. Production version would
-            maintain a sliding window of trades and calculate volume continuously.
-        """
-        # Simplified: Return 0.0 as placeholder
-        # Full implementation would subscribe to "md.trades" topic
-        # and maintain sliding window of trades for volume calculation
-        return 0.0
+            cutoff_ns = ts_ns - window_ns
+            while trades and trades[0][0] < cutoff_ns:
+                total_volume -= trades.popleft()[1]
+
+            yield total_volume if total_volume > 0 else 0.0
 
     async def _monitor_and_slice(
         self, bus: BusProto, execution_id: str, algo: ExecutionAlgorithm
@@ -339,60 +354,57 @@ class POVExecutor(BaseExecutor):
             This is a simplified implementation. Production version would
             handle timeouts, volume spikes, and dynamic adjustment.
         """
-        # Get params
-        measurement_period_seconds = algo.params.get("measurement_period_seconds", 60)
+        measurement_period_seconds = int(algo.params.get("measurement_period_seconds", 60))
         limit_price = algo.params.get("limit_price")
         order_type = algo.params.get("order_type", "limit")
 
-        # Track fills
         filled_quantity = 0.0
         current_slice_idx = 0
-        start_ts_ns = int(time.time() * 1e9)
+        start_ts_ns = time.time_ns()
+        total_duration_ns = algo.duration_seconds * 1_000_000_000
+        latest_volume = self._get_recent_volume(
+            symbol=algo.symbol,
+            start_ts_ns=start_ts_ns - (measurement_period_seconds * 1_000_000_000),
+            end_ts_ns=start_ts_ns,
+        )
+        volume_iter = self._monitor_volume(bus, algo.symbol, measurement_period_seconds)
+        fill_iter = self.track_fills(bus, execution_id)
 
-        async for fill in self.track_fills(bus, execution_id):
-            filled_quantity += fill.qty
+        async def next_volume_sample() -> float:
+            return await volume_iter.__anext__()
 
-            # Check if we need more slices
+        async def next_fill_event() -> FillEvent:
+            return await fill_iter.__anext__()
+
+        volume_task: asyncio.Task[float] | None = asyncio.create_task(next_volume_sample())
+        fill_task: asyncio.Task[FillEvent] | None = asyncio.create_task(next_fill_event())
+
+        def emit_slice(event_ts_ns: int) -> OrderIntent | None:
+            nonlocal current_slice_idx, latest_volume
+
+            if latest_volume < self.min_volume_threshold:
+                return None
+
             remaining_quantity = algo.total_quantity - filled_quantity
+            if remaining_quantity <= 0.001:
+                return None
 
-            if remaining_quantity <= 0.001:  # Small tolerance
-                break
-
-            # Get recent volume
-            current_ts_ns = int(time.time() * 1e9)
-            time_elapsed_ns = current_ts_ns - start_ts_ns
-            time_remaining_ns = (algo.duration_seconds * 1_000_000_000) - time_elapsed_ns
-
+            time_remaining_ns = total_duration_ns - (event_ts_ns - start_ts_ns)
             if time_remaining_ns <= 0:
-                # Execution window expired
-                break
+                return None
 
-            volume_start_ts = current_ts_ns - (measurement_period_seconds * 1_000_000_000)
-            recent_volume = self._get_recent_volume(
-                symbol=algo.symbol,
-                start_ts_ns=volume_start_ts,
-                end_ts_ns=current_ts_ns,
-            )
-
-            # Check volume threshold
-            if recent_volume < self.min_volume_threshold:
-                # Pause - volume too low
-                continue
-
-            # Calculate next slice (with acceleration)
-            total_duration_ns = algo.duration_seconds * 1_000_000_000
             next_slice_size = self._calculate_slice_size(
-                market_volume=recent_volume,
+                market_volume=latest_volume,
                 remaining_quantity=remaining_quantity,
                 time_remaining_ns=time_remaining_ns,
                 total_quantity=algo.total_quantity,
                 total_duration_ns=total_duration_ns,
             )
+            if next_slice_size <= 0:
+                return None
 
-            # Generate next intent
             current_slice_idx += 1
-
-            next_intent = self._create_slice_intent(
+            return self._create_slice_intent(
                 execution_id=execution_id,
                 slice_idx=current_slice_idx,
                 symbol=algo.symbol,
@@ -400,9 +412,45 @@ class POVExecutor(BaseExecutor):
                 slice_qty=next_slice_size,
                 total_qty=algo.total_quantity,
                 limit_price=limit_price,
-                scheduled_ts_ns=current_ts_ns,
+                scheduled_ts_ns=event_ts_ns,
                 measurement_period_seconds=measurement_period_seconds,
                 order_type=order_type,
             )
 
-            yield next_intent
+        while filled_quantity < algo.total_quantity - 0.001:
+            tasks = [t for t in (fill_task, volume_task) if t is not None]
+            if not tasks:
+                break
+
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            now_ns = time.time_ns()
+
+            if volume_task in done and volume_task is not None:
+                try:
+                    latest_volume = volume_task.result()
+                except StopAsyncIteration:
+                    volume_task = None
+                else:
+                    volume_task = asyncio.create_task(next_volume_sample())
+                    elapsed = (
+                        (now_ns - start_ts_ns) / total_duration_ns if total_duration_ns else 1.0
+                    )
+                    actual = filled_quantity / algo.total_quantity if algo.total_quantity else 1.0
+                    if actual < max(0.0, elapsed - 0.05):
+                        intent = emit_slice(now_ns)
+                        if intent is not None:
+                            yield intent
+
+            if fill_task in done and fill_task is not None:
+                try:
+                    fill = fill_task.result()
+                except StopAsyncIteration:
+                    fill_task = None
+                else:
+                    filled_quantity += fill.qty
+                    if filled_quantity >= algo.total_quantity - 0.001:
+                        break
+                    fill_task = asyncio.create_task(next_fill_event())
+                    intent = emit_slice(now_ns)
+                    if intent is not None:
+                        yield intent
