@@ -1,7 +1,7 @@
 # Njord Quant Development Roadmap
 
-**Current Phase:** 8 — Execution Layer 📋
-**Last Updated:** 2025-10-02
+**Current Phase:** 9 — Metrics & Telemetry 📋
+**Last Updated:** 2025-10-06
 
 ## Quick Navigation
 
@@ -47,7 +47,7 @@
 | 5 | Backtester | ✅ | 5 | [phase-05-backtester.md](roadmap/phases/phase-05-backtester.md) |
 | 6 | Portfolio Allocator | ✅ | 4 | [phase-06-portfolio.md](roadmap/phases/phase-06-portfolio.md) |
 | 7 | Research API | ✅ | 9 | [phase-07-research-api.md](roadmap/phases/phase-07-research-api.md) |
-| 8 | Execution Layer | 📋 | 9 | [phase-08-execution.md](roadmap/phases/phase-08-execution.md) |
+| 8 | Execution Layer | ✅ | 10 | [phase-08-execution.md](roadmap/phases/phase-08-execution.md) |
 | 9 | Metrics & Telemetry | 📋 | 10 | [phase-09-telemetry.md](roadmap/phases/phase-09-telemetry.md) |
 | 10 | Live Trade Controller | 📋 | 8 | [phase-10-controller.md](roadmap/phases/phase-10-controller.md) |
 | 11 | Monitoring & Alerts | 📋 | 10 | [phase-11-monitoring.md](roadmap/phases/phase-11-monitoring.md) |
@@ -70,7 +70,7 @@ Phase 0 (Bootstrap) ✅
                                     └─> Phase 5 (Backtester) ✅
                                             └─> Phase 6 (Portfolio) ✅
                                                     └─> Phase 7 (Research) ✅
-                                                            └─> Phase 8 (Execution) 📋
+                                                            └─> Phase 8 (Execution) ✅
                                                                     └─> Phase 9 (Telemetry) 📋
                                                                             └─> Phase 10 (Controller) 📋
                                                                                     └─> Phase 11 (Monitoring) 📋
@@ -85,25 +85,25 @@ Phase 0 (Bootstrap) ✅
 
 ## Current Phase Summary
 
-**Phase 8 — Execution Layer** 📋
+**Phase 9 — Metrics & Telemetry** 📋
 
-Implement sophisticated order execution algorithms, smart routing, and realistic slippage/fee simulation.
+Implement comprehensive metrics collection, Prometheus exporter, Grafana dashboards, and real-time performance monitoring.
 
 **Sub-Phases:**
-- 8.0: Execution Layer Foundations (BusProto, BaseExecutor, adapters)
-- 8.1: Execution Contracts (ExecutionAlgorithm, ExecutionSlice, ExecutionReport)
-- 8.2: TWAP Algorithm (Time-Weighted Average Price)
-- 8.3: VWAP Algorithm (Volume-Weighted Average Price)
-- 8.4: Iceberg Algorithm (Hidden order display)
-- 8.5: POV Algorithm (Percentage of Volume)
-- 8.6: Slippage Models (Linear, square-root market impact)
-- 8.7: Smart Order Router (Algorithm selection logic)
-- 8.8: Execution Simulator (Backtest integration)
-- 8.9: Execution Performance Metrics (Implementation shortfall, slippage tracking)
+- 9.0: Metrics Contracts (Metric, MetricSample, MetricSnapshot)
+- 9.1: Prometheus Exporter (HTTP /metrics endpoint)
+- 9.2: Service Instrumentation (risk_engine, paper_trader, broker, strategies)
+- 9.3: Grafana Dashboard Configs (system health, trading, performance, execution)
+- 9.4: Metric Aggregation Service (downsampling and persistence)
+- 9.5: Performance Attribution (Brinson, factor-based, risk-adjusted)
+- 9.6: Real-time Metrics Dashboard (WebSocket/SSE)
+- 9.7: Alert System (YAML-defined rules)
+- 9.8: Metrics Retention and Cleanup
+- 9.9: Metrics Integration Testing
 
-**Full Details:** [roadmap/phases/phase-08-execution.md](roadmap/phases/phase-08-execution.md)
+**Full Details:** [roadmap/phases/phase-09-telemetry.md](roadmap/phases/phase-09-telemetry.md)
 
-**Note:** Phases 8-13 have detailed specifications but are not yet implemented. Implementation follows dependency order (8 → 9 → 10 → 11 → 12 → 13).
+**Note:** Phases 9-16 have detailed specifications but are not yet implemented. Implementation follows dependency order (9 → 10 → 11 → 12 → 13 → 14 → 15 → 16).
 
 ---
 
@@ -170,6 +170,6 @@ If needed: `cp roadmap/archive/ROADMAP-monolith.md ROADMAP.md`
 
 ---
 
-**Last Updated:** 2025-10-02
+**Last Updated:** 2025-10-06
 **Maintained By:** Njord Trust
 **License:** Proprietary

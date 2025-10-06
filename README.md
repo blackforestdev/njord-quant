@@ -10,7 +10,7 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 
 ## Core Capabilities
 
-### ✅ Implemented (Phases 0-7)
+### ✅ Implemented (Phases 0-8)
 
 #### Trading Infrastructure (Phases 0-3)
 - Market data ingestion with deduplication, journaling, and reconnect logic
@@ -25,12 +25,18 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - Research API providing pandas/PyArrow access to journaled OHLCV, trades, fills, and positions
 - Interactive HTML reporting with equity curves, allocations, and performance metrics
 
-### 📋 Planned (Phases 8-16)
+#### Execution Layer (Phase 8)
+- TWAP/VWAP/Iceberg/POV execution algorithms with async/sync adapters
+- Linear and square-root slippage models with market impact simulation
+- Smart order router with algorithm selection logic based on order characteristics
+- Execution simulator for backtest integration with deterministic fill generation
+- Performance metrics tracker (implementation shortfall, benchmark comparisons, algorithm analysis)
 
-**Note:** Phases 8-16 are fully specified in the roadmap but not yet implemented. Implementation follows dependency order.
+### 📋 Planned (Phases 9-16)
 
-#### Execution, Observability & Compliance (Phases 8-12)
-- **Phase 8 — Execution Layer:** TWAP/VWAP/Iceberg/POV algorithms, slippage models, smart order routing
+**Note:** Phases 9-16 are fully specified in the roadmap but not yet implemented. Implementation follows dependency order.
+
+#### Observability & Compliance (Phases 9-12)
 - **Phase 9 — Metrics & Telemetry:** Prometheus exporter, Grafana dashboards, performance attribution, real-time metrics
 - **Phase 10 — Live Trade Controller:** Unified CLI (`njord-ctl`), process management, config hot-reload, session tracking
 - **Phase 11 — Monitoring & Alerts:** Alert rules engine, multi-channel notifications, deduplication
@@ -61,12 +67,12 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - **backtest/**: Deterministic replay engine, fill simulation, analytics tooling, reporting assets
 - **portfolio/**: Multi-strategy allocator components (contracts, allocation logic, rebalancer, backtests, reporting)
 - **research/**: Data reader, aggregation stack, validation tools, export utilities, research CLI
-- **tests/**: Unit, integration, and golden test suites (70+ test files) ensuring strict guardrails
+- **execution/**: Execution algorithms (TWAP, VWAP, Iceberg, POV), slippage models, smart order router, performance tracker
+- **tests/**: Unit, integration, and golden test suites (80+ test files) ensuring strict guardrails
 - **var/**: Structured logs and runtime state (append-only NDJSON)
 
-### Planned Components (Phases 8-16)
+### Planned Components (Phases 9-16)
 
-- **execution/** (Phase 8): Execution algorithms (TWAP, VWAP, Iceberg, POV), slippage models, smart order router
 - **telemetry/** (Phase 9): Prometheus exporter, metric aggregation, performance attribution, real-time dashboard
 - **controller/** (Phase 10): Process manager, config hot-reload, session tracking, health checks, log aggregation
 - **alerts/** (Phase 11): Alert rules engine, notification channels (log/Redis/webhook/email/Slack), alert CLI
@@ -90,17 +96,20 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 
 ## Current Phase
 
-**Phase 8 — Execution Layer** 📋 *(Planned, Not Implemented)*
+**Phase 9 — Metrics & Telemetry** 📋 *(Planned, Not Implemented)*
 
 Next steps:
-- Execution layer foundations (BusProto, BaseExecutor, sync/async adapters)
-- TWAP/VWAP/Iceberg/POV execution algorithms
-- Slippage models (linear, square-root market impact)
-- Smart order router with algorithm selection logic
-- Execution simulator for backtest integration
-- Execution performance metrics (implementation shortfall, slippage tracking)
+- Metrics contracts (Metric, MetricSample, MetricSnapshot)
+- Prometheus exporter with HTTP /metrics endpoint
+- Service instrumentation (risk_engine, paper_trader, broker, strategies)
+- Grafana dashboard configurations (system health, trading, performance, execution)
+- Metric aggregation service with downsampling and persistence
+- Performance attribution (Brinson, factor-based, risk-adjusted)
+- Real-time metrics dashboard (WebSocket/SSE)
+- Alert system with YAML-defined rules
+- Metrics retention and cleanup
 
-See **[roadmap/phases/phase-08-execution.md](./roadmap/phases/phase-08-execution.md)** for detailed specifications.
+See **[roadmap/phases/phase-09-telemetry.md](./roadmap/phases/phase-09-telemetry.md)** for detailed specifications.
 
 ## Project Structure
 
@@ -121,6 +130,7 @@ njord_quant/
 ├── data/               # Data storage (OHLCV, trades, fills)
 ├── deploy/             # Deployment scripts and systemd templates
 ├── docs/               # Design notes and decision records
+├── execution/          # Execution algorithms (TWAP, VWAP, Iceberg, POV), router, performance
 ├── experiments/        # Research experiments and notebooks
 ├── portfolio/          # Portfolio allocator components
 ├── research/           # Data reader, aggregation, export utilities
@@ -128,7 +138,7 @@ njord_quant/
 ├── roadmap/            # Phase specifications (hierarchical)
 ├── scripts/            # Operational scripts (kill-switch, validation)
 ├── strategies/         # Strategy plugin framework and samples
-├── tests/              # Unit, integration, and golden test suites (70+ files)
+├── tests/              # Unit, integration, and golden test suites (80+ files)
 └── var/                # Structured logs and runtime state (NDJSON)
 ```
 
@@ -199,9 +209,9 @@ njord_quant/
 | **ohlcv_aggregator** | Real-time OHLCV candle aggregation and publishing | `apps/ohlcv_aggregator/` |
 | **replay_engine** | Event replay for backtesting and deterministic simulation | `apps/replay_engine/` |
 
-### Planned Services (Phases 8-12)
+### Planned Services (Phases 9-12)
 
-- **Phase 9:** Metric aggregator, Prometheus exporter, real-time metrics dashboard
+- **Phase 9:** Metric aggregator, Prometheus exporter, real-time metrics dashboard, alert service
 - **Phase 10:** Process manager (`njord-ctl` CLI), config hot-reload, session tracking
 - **Phase 11:** Alert service with multi-channel notifications (log/Redis/webhook/email/Slack)
 - **Phase 12:** Audit service with immutable logging, replay validation, and regulatory exports
@@ -339,7 +349,7 @@ make journal       # Tail journal logs
 
 ## Roadmap Snapshot
 
-### ✅ Implemented (Phases 0-7)
+### ✅ Implemented (Phases 0-8)
 
 - **Phase 0 — Bootstrap & Guardrails:** Tooling, config loader, structured logging, NDJSON journal
 - **Phase 1 — Event Bus & Market Data:** Redis bus, contracts, market data ingest daemon
@@ -349,12 +359,12 @@ make journal       # Tail journal logs
 - **Phase 5 — Backtester:** Contracts, engine core, fill simulation, equity curve, metrics, CLI, golden tests, parameter sweeps, reporting
 - **Phase 6 — Portfolio Allocator:** Multi-strategy capital allocation, risk adjustment, portfolio backtesting, reporting
 - **Phase 7 — Research API:** Data reader, aggregation stack, research CLI, documentation
+- **Phase 8 — Execution Layer:** TWAP/VWAP/Iceberg/POV algorithms, slippage models, smart order router, execution simulator, performance metrics
 
-### 📋 Planned (Phases 8-16)
+### 📋 Planned (Phases 9-16)
 
-**Note:** Fully specified in roadmap, not yet implemented. Implementation follows dependency order: 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16.
+**Note:** Fully specified in roadmap, not yet implemented. Implementation follows dependency order: 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16.
 
-- **Phase 8 — Execution Layer:** TWAP/VWAP/Iceberg/POV algorithms, slippage models, smart order routing
 - **Phase 9 — Metrics & Telemetry:** Prometheus exporter, Grafana dashboards, performance attribution, real-time metrics
 - **Phase 10 — Live Trade Controller:** Unified CLI (njord-ctl), process management, config hot-reload, session tracking
 - **Phase 11 — Monitoring & Alerts:** Alert rules engine, multi-channel notifications, deduplication
@@ -374,6 +384,6 @@ See **[ROADMAP.md](./ROADMAP.md)** for complete phase index and navigation to de
 
 ---
 
-**Last Updated:** 2025-10-03
-**Current Phase:** 8 (Execution Layer) — Planned, not implemented
-**Roadmap Status:** Phases 0-7 complete ✅ | Phases 8-16 specified 📋
+**Last Updated:** 2025-10-06
+**Current Phase:** 9 (Metrics & Telemetry) — Planned, not implemented
+**Roadmap Status:** Phases 0-8 complete ✅ | Phases 9-16 specified 📋
