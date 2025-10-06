@@ -247,7 +247,7 @@ async def test_router_validates_algorithm_availability() -> None:
     router = SmartOrderRouter(bus, executors)
 
     # This should trigger POV selection (high urgency)
-    # But POV is not available, so should raise error
+    # Router should fall back to available algorithm (VWAP)
     intent = OrderIntent(
         id="parent_missing",
         ts_local_ns=int(time.time() * 1e9),
@@ -259,8 +259,7 @@ async def test_router_validates_algorithm_availability() -> None:
         limit_price=50000.0,
     )
 
-    # High urgency should select POV, but it's not available
-    # Router should fall back to available algorithm (VWAP)
+    # High urgency selects POV, not available → fallback to VWAP
     await router.route_order(intent, urgency_seconds=30)
 
     # Verify fallback worked
