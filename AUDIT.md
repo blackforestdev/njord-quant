@@ -22,7 +22,14 @@ You are the Audit Agent reviewing Phase `<phase>` (module `<module>`). Review ev
 
 ### 3. Test Coverage & Determinism
 - Confirm new tests exercise happy paths plus validation failures and edge cases.
-- Ensure tests remain deterministic (fixed seeds, no real sleeps, no network I/O).
+- **Unit tests:** Verify use of `InMemoryBus` or mocks (no network I/O, always fast)
+- **Integration tests (when critical to module behavior):**
+  - Localhost Redis permitted via Docker Compose only
+  - Must use skip guards (`REDIS_SKIP=1` or availability check pattern from test_bus_pubsub.py)
+  - Must use `docker-compose.test.yml` (verify 127.0.0.1 binding in config)
+  - Must use isolated test topics (random UUIDs to prevent cross-contamination)
+  - Must include both unit tests (InMemoryBus) AND integration tests (real Redis)
+- Ensure tests remain deterministic (fixed seeds, no real sleeps, isolated topics)
 - Identify missing tests for failure modes or additional edge cases.
 
 ### 4. Conventions & Dependencies
@@ -36,7 +43,22 @@ You are the Audit Agent reviewing Phase `<phase>` (module `<module>`). Review ev
 - Note optional polish if it materially improves clarity, safety, or maintainability.
 
 ### 6. Suggested Checks (run when feasible)
-- Run targeted pytest suites (e.g., `PYTHONPATH=. ./venv/bin/pytest tests/test_<module>*.py -q`).
-- Execute lint/format/type commands if part of acceptance criteria.
+- **Unit tests:** Run targeted pytest suites (e.g., `PYTHONPATH=. ./venv/bin/pytest tests/test_<module>*.py -q`)
+- **Integration tests (for Redis-dependent modules):**
+  ```bash
+  # Start isolated test Redis
+  docker-compose -f docker-compose.test.yml up -d redis
+
+  # Wait for readiness
+  docker-compose -f docker-compose.test.yml exec redis redis-cli ping
+
+  # Run integration tests
+  PYTHONPATH=. ./venv/bin/pytest tests/test_<module>*.py -v -m integration
+
+  # Cleanup
+  docker-compose -f docker-compose.test.yml down
+  ```
+- Execute lint/format/type commands if part of acceptance criteria
+- **Security verification:** Confirm docker-compose.test.yml binds to 127.0.0.1 (not 0.0.0.0)
 
 Respond only with findings and actionable recommendations—no code changes.

@@ -48,6 +48,10 @@ This project maintains three levels of agent guidance:
   - **Final output:** Structured format with verification results (see Communication Protocol)
   - **Debugging:** Verbose explanations only when explicitly requested
 - **Performance guardrail:** Test suite must complete in ≤30s; no long sleeps or unbounded loops
+- **Test tiering:**
+  - **Unit tests (default):** Use `InMemoryBus` or mocks; no network I/O; always fast; required for all commits
+  - **Integration tests (when critical):** Localhost Redis via Docker Compose; gated with `@pytest.mark.integration` or `REDIS_SKIP=1`; required when acceptance criteria depend on Redis pub/sub behavior
+  - **Security:** Integration tests must bind to 127.0.0.1 only (no external network); use `docker-compose.test.yml`
 
 ### 3. Coding Standards
 | Standard | Specification |
@@ -56,7 +60,7 @@ This project maintains three levels of agent guidance:
 | **Type checking** | `mypy --strict` |
 | **Formatting** | `ruff format` |
 | **Linting** | `ruff check .` (rules: E, F, I, B, UP, SIM, RUF) |
-| **Testing** | `pytest` (fast, deterministic, no network I/O) |
+| **Testing** | `pytest` (two-tier strategy: unit tests with `InMemoryBus`, integration tests with localhost Redis) |
 | **Import style** | `from core.contracts import X` (never top-level `contracts`) |
 
 ### 4. Repository Structure
@@ -320,8 +324,13 @@ class ImplementationClass:
 **Constraints:**
 - No new **runtime** dependencies (Phases 0-6, 8-16)
   - **Exception:** Phase 7 (Research API) may add pandas, pyarrow, matplotlib, jupyter (optional group)
-- No network I/O in tests
-- Must stay deterministic
+- **Network I/O in tests:**
+  - **Unit tests:** No network I/O (use `InMemoryBus` or mocks)
+  - **Integration tests:** Localhost Redis permitted when critical to module behavior
+    - Must use `docker-compose.test.yml` (127.0.0.1 binding only)
+    - Must include skip guards (`REDIS_SKIP=1` or availability check)
+    - Must mark with `@pytest.mark.integration` or document in test file
+- Must stay deterministic (fixed seeds, no real sleeps, isolated test topics)
 - Keep diffs minimal (≤150 LOC, ≤4 files)
 - <Add phase-specific architectural constraints here>
 
@@ -340,6 +349,11 @@ class ImplementationClass:
 - <Test scenario 2 (e.g., "Test includes multiple replenishment cycles")>
 - **Round-trip verification (if applicable): "Test verifies DataStructureA → Transformation → DataStructureB recovery"**
 - **Critical path test: "Test verifies <architectural boundary> is enforced (e.g., no broker bypass)"**
+- **Integration tests (if Redis-dependent module):**
+  - Unit tests use `InMemoryBus` (no Redis dependency)
+  - Integration test verifies Redis pub/sub round-trip (gated, localhost only)
+  - Test includes skip guard: `if os.getenv("REDIS_SKIP") == "1": pytest.skip()`
+  - Docker Compose config binds to 127.0.0.1 only (verified in test)
 - `make fmt lint type test` green
 - **Audit must PASS (zero High/Medium findings)**
 ```
@@ -392,9 +406,18 @@ When a user says **"Implement Phase X.Y — Sub-Phase Title"**, the code agent m
 
 5. **Verification Loop:**
    ```bash
+   # Unit tests (always run)
    make fmt && make lint && make type && make test
    # If red → fix errors → rerun until green
-   # If green → proceed to audit
+
+   # Integration tests (when acceptance criteria require Redis)
+   docker-compose -f docker-compose.test.yml up -d redis
+   docker-compose -f docker-compose.test.yml exec redis redis-cli ping  # Verify ready
+   PYTHONPATH=. pytest -v -m integration  # Run integration-marked tests
+   docker-compose -f docker-compose.test.yml down
+   # If red → fix errors → rerun
+
+   # If all green → proceed to audit
    ```
 
 6. **Audit Loop:** (Production Quality Gate)
