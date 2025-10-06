@@ -81,18 +81,22 @@ class ExecutionSimulator:
         if missing_cols:
             raise ValueError(f"market_data missing required columns: {missing_cols}")
 
-        # Plan execution via executor
-        fills = self._plan_and_execute(executor, algo, market_data)
+        fills, arrival_price, benchmark_vwap = self._plan_and_execute(executor, algo, market_data)
 
         # Build execution report
-        return self._build_execution_report(algo, fills)
+        return self._build_execution_report(
+            algo=algo,
+            fills=fills,
+            arrival_price=arrival_price,
+            benchmark_vwap=benchmark_vwap,
+        )
 
     def _plan_and_execute(
         self,
         executor: BaseExecutor,
         algo: ExecutionAlgorithm,
         market_data: pd.DataFrame,
-    ) -> list[FillEvent]:
+    ) -> tuple[list[FillEvent], float, float | None]:
         """Plan execution via executor, simulate fills.
 
         Args:
@@ -106,6 +110,14 @@ class ExecutionSimulator:
         # Use SyncExecutionWrapper to call async executor
         wrapper = SyncExecutionWrapper(executor)
         intents = wrapper.plan_execution_sync(algo)
+
+        arrival_price = float(market_data.iloc[0]["close"])
+        volume_sum = float(market_data["volume"].sum())
+        benchmark_vwap = (
+            float((market_data["close"] * market_data["volume"]).sum() / volume_sum)
+            if volume_sum > 0
+            else None
+        )
 
         # Simulate fills for each OrderIntent
         fills: list[FillEvent] = []
@@ -125,7 +137,7 @@ class ExecutionSimulator:
             )
             fills.append(fill)
 
-        return fills
+        return fills, arrival_price, benchmark_vwap
 
     def _find_market_bar(
         self,
@@ -200,6 +212,8 @@ class ExecutionSimulator:
         self,
         algo: ExecutionAlgorithm,
         fills: list[FillEvent],
+        arrival_price: float,
+        benchmark_vwap: float | None,
     ) -> ExecutionReport:
         """Build execution report from fills.
 
@@ -226,6 +240,8 @@ class ExecutionSimulator:
                 status="failed",
                 start_ts_ns=0,
                 end_ts_ns=None,
+                arrival_price=arrival_price,
+                implementation_shortfall_bps=None,
             )
 
         # Extract execution_id from first fill
@@ -251,6 +267,17 @@ class ExecutionSimulator:
         start_ts_ns = min(fill.ts_fill_ns for fill in fills)
         end_ts_ns = max(fill.ts_fill_ns for fill in fills) if status == "completed" else None
 
+        shortfall_bps: float | None = None
+        if arrival_price > 0 and filled_quantity > 0:
+            diff = avg_fill_price - arrival_price
+            if algo.side == "sell":
+                diff = -diff
+            shortfall_bps = (diff / arrival_price) * 10_000
+
+        vwap_deviation = None
+        if benchmark_vwap and benchmark_vwap > 0:
+            vwap_deviation = (avg_fill_price - benchmark_vwap) / benchmark_vwap
+
         return ExecutionReport(
             execution_id=execution_id,
             symbol=algo.symbol,
@@ -264,4 +291,8 @@ class ExecutionSimulator:
             status=status,
             start_ts_ns=start_ts_ns,
             end_ts_ns=end_ts_ns,
+            benchmark_vwap=benchmark_vwap,
+            vwap_deviation=vwap_deviation,
+            arrival_price=arrival_price,
+            implementation_shortfall_bps=shortfall_bps,
         )

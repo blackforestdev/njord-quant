@@ -4,9 +4,21 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, Literal, cast
+
+import pandas as pd
 
 from backtest.contracts import BacktestConfig, BacktestResult
+from core.contracts import OrderIntent
 from core.journal_reader import JournalReader
+from execution.base import BaseExecutor
+from execution.contracts import ExecutionAlgorithm, ExecutionReport
+from execution.iceberg import IcebergExecutor
+from execution.pov import POVExecutor
+from execution.simulator import ExecutionSimulator
+from execution.slippage import LinearSlippageModel
+from execution.twap import TWAPExecutor
+from execution.vwap import VWAPExecutor
 from strategies.base import StrategyBase
 
 
@@ -42,6 +54,7 @@ class BacktestEngine:
         config: BacktestConfig,
         strategy: StrategyBase,
         journal_dir: Path,
+        execution_simulator: ExecutionSimulator | None = None,
     ) -> None:
         """Initialize backtest engine.
 
@@ -53,6 +66,11 @@ class BacktestEngine:
         self.config = config
         self.strategy = strategy
         self.journal_dir = journal_dir
+
+        impact_coefficient = config.slippage_bps / 10_000 if config.slippage_bps > 0 else 0.0
+        self.execution_simulator = execution_simulator or ExecutionSimulator(
+            slippage_model=LinearSlippageModel(impact_coefficient=impact_coefficient)
+        )
 
         # State
         self.cash = config.initial_capital
@@ -68,24 +86,32 @@ class BacktestEngine:
         """
         # Load bars from journals
         reader = JournalReader(self.journal_dir)
-        bars = reader.read_bars(
-            symbol=self.config.symbol,
-            timeframe="1m",  # TODO: Make configurable
-            start=self.config.start_ts,
-            end=self.config.end_ts,
+        bars_iter = list(
+            reader.read_bars(
+                symbol=self.config.symbol,
+                timeframe="1m",  # TODO: Make configurable
+                start=self.config.start_ts,
+                end=self.config.end_ts,
+            )
         )
 
+        if not bars_iter:
+            return self._calculate_results()
+
+        market_records = [asdict(bar) for bar in bars_iter]
+        market_df = pd.DataFrame(market_records)
+
         # Replay bars
-        for bar in bars:
-            # Convert bar to event dict for strategy
-            event = asdict(bar)
+        for idx, bar in enumerate(bars_iter):
+            event = market_records[idx]
+            market_slice = market_df.iloc[idx:].reset_index(drop=True)
 
             # Inject bar into strategy
             intents = list(self.strategy.on_event(event))
 
             # Process intents
             for intent in intents:
-                self._process_intent(intent, bar.close)
+                self._process_intent(intent, bar.close, market_slice)
 
             # Update equity curve
             equity = self._calculate_equity(bar.close)
@@ -94,7 +120,12 @@ class BacktestEngine:
         # Calculate final metrics
         return self._calculate_results()
 
-    def _process_intent(self, intent: object, current_price: float) -> None:
+    def _process_intent(
+        self,
+        intent: object,
+        current_price: float,
+        market_slice: pd.DataFrame,
+    ) -> None:
         """Process order intent and generate fill.
 
         Args:
@@ -105,8 +136,26 @@ class BacktestEngine:
         if not hasattr(intent, "side") or not hasattr(intent, "qty"):
             return
 
-        side = intent.side
-        qty = intent.qty
+        order_intent = cast(OrderIntent, intent)
+        side = order_intent.side
+        qty = order_intent.qty
+
+        execution_meta = order_intent.meta.get("execution")
+        if (
+            self.execution_simulator is not None
+            and isinstance(execution_meta, dict)
+            and execution_meta.get("algo_type")
+        ):
+            algo = self._build_execution_algorithm(order_intent, execution_meta)
+            if algo.side == "buy" and self.cash <= 0:
+                return
+            if algo.side == "sell" and self.position.qty < algo.total_quantity:
+                return
+
+            executor = self._create_executor(order_intent.strategy_id, algo, execution_meta)
+            report = self.execution_simulator.simulate_execution(executor, algo, market_slice)
+            self._apply_execution_report(report, algo.side)
+            return
 
         # Simple fill simulation (market order at close price)
         if side == "buy":
@@ -126,7 +175,6 @@ class BacktestEngine:
                     }
                 )
         elif side == "sell":
-            # Only sell if we have position
             if self.position.qty >= qty:
                 proceeds = qty * current_price
                 commission = proceeds * self.config.commission_rate
@@ -142,6 +190,120 @@ class BacktestEngine:
                         "commission": commission,
                     }
                 )
+
+    def _build_execution_algorithm(
+        self,
+        intent: OrderIntent,
+        execution_meta: dict[str, object],
+    ) -> ExecutionAlgorithm:
+        order_intent = intent
+
+        algo_value = execution_meta.get("algo_type", "TWAP")
+        if algo_value not in {"TWAP", "VWAP", "Iceberg", "POV"}:
+            raise ValueError(f"Unsupported execution algorithm: {algo_value}")
+        algo_type = cast(Literal["TWAP", "VWAP", "Iceberg", "POV"], algo_value)
+
+        qty_value = execution_meta.get("total_quantity", order_intent.qty)
+        total_quantity = float(cast(float, qty_value))
+
+        duration_value = execution_meta.get("duration_seconds", 1)
+        duration_seconds = int(cast(int, duration_value))
+
+        params = cast(dict[str, Any], execution_meta.get("params", {}))
+
+        return ExecutionAlgorithm(
+            algo_type=algo_type,
+            symbol=order_intent.symbol,
+            side=order_intent.side,
+            total_quantity=total_quantity,
+            duration_seconds=max(duration_seconds, 1),
+            params=params,
+        )
+
+    def _create_executor(
+        self,
+        strategy_id: str,
+        algo: ExecutionAlgorithm,
+        execution_meta: dict[str, object],
+    ) -> BaseExecutor:
+        executor_params = cast(dict[str, Any], execution_meta.get("executor_params", {}))
+
+        if algo.algo_type == "TWAP":
+            slice_count = int(executor_params.get("slice_count", 1))
+            order_value = executor_params.get("order_type", "market")
+            order_type = cast(Literal["limit", "market"], order_value)
+            return TWAPExecutor(
+                strategy_id=strategy_id, slice_count=slice_count, order_type=order_type
+            )
+
+        if algo.algo_type == "VWAP":
+            if self.execution_simulator.data_reader is None:
+                raise ValueError("VWAP execution requires data_reader")
+            slice_count = int(executor_params.get("slice_count", 1))
+            order_value = executor_params.get("order_type", "market")
+            order_type = cast(Literal["limit", "market"], order_value)
+            return VWAPExecutor(
+                strategy_id=strategy_id,
+                data_reader=self.execution_simulator.data_reader,
+                slice_count=slice_count,
+                order_type=order_type,
+            )
+
+        if algo.algo_type == "Iceberg":
+            visible_ratio = float(executor_params.get("visible_ratio", 0.1))
+            replenish_threshold = float(executor_params.get("replenish_threshold", 0.5))
+            return IcebergExecutor(
+                strategy_id=strategy_id,
+                visible_ratio=visible_ratio,
+                replenish_threshold=replenish_threshold,
+            )
+
+        if algo.algo_type == "POV":
+            if self.execution_simulator.data_reader is None:
+                raise ValueError("POV execution requires data_reader")
+            target_pov = float(executor_params.get("target_pov", 0.1))
+            min_volume_threshold = float(executor_params.get("min_volume_threshold", 1000.0))
+            return POVExecutor(
+                strategy_id=strategy_id,
+                data_reader=self.execution_simulator.data_reader,
+                target_pov=target_pov,
+                min_volume_threshold=min_volume_threshold,
+            )
+
+        raise ValueError(f"Unsupported execution algorithm: {algo.algo_type}")
+
+    def _apply_execution_report(
+        self,
+        report: ExecutionReport,
+        side: Literal["buy", "sell"],
+    ) -> None:
+        if report.filled_quantity <= 0:
+            return
+
+        notional = report.filled_quantity * report.avg_fill_price
+        fees = report.total_fees
+
+        if side == "buy":
+            total_cost = notional + fees
+            if self.cash < total_cost:
+                return
+            self.cash -= total_cost
+            self.position.update(report.filled_quantity, report.avg_fill_price)
+        else:
+            if self.position.qty < report.filled_quantity:
+                return
+            self.cash += notional - fees
+            self.position.update(-report.filled_quantity, report.avg_fill_price)
+
+        self.trades.append(
+            {
+                "side": side,
+                "qty": report.filled_quantity,
+                "price": report.avg_fill_price,
+                "commission": fees,
+                "execution_id": report.execution_id,
+            }
+        )
 
     def _calculate_equity(self, current_price: float) -> float:
         """Calculate current equity (cash + position value).

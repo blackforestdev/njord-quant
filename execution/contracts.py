@@ -172,6 +172,8 @@ class ExecutionReport:
         end_ts_ns: Execution end time (nanoseconds, None if not finished)
         benchmark_vwap: VWAP benchmark price (None for non-VWAP algorithms)
         vwap_deviation: Deviation from benchmark as fraction (None for non-VWAP)
+        arrival_price: Arrival (reference) price at start of execution
+        implementation_shortfall_bps: Implementation shortfall in basis points
     """
 
     execution_id: str
@@ -188,6 +190,8 @@ class ExecutionReport:
     end_ts_ns: int | None
     benchmark_vwap: float | None = None
     vwap_deviation: float | None = None
+    arrival_price: float | None = None
+    implementation_shortfall_bps: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary.
@@ -210,6 +214,8 @@ class ExecutionReport:
             "end_ts_ns": self.end_ts_ns,
             "benchmark_vwap": self.benchmark_vwap,
             "vwap_deviation": self.vwap_deviation,
+            "arrival_price": self.arrival_price,
+            "implementation_shortfall_bps": self.implementation_shortfall_bps,
         }
 
     @classmethod
@@ -237,4 +243,6 @@ class ExecutionReport:
             end_ts_ns=data.get("end_ts_ns"),
             benchmark_vwap=data.get("benchmark_vwap"),
             vwap_deviation=data.get("vwap_deviation"),
+            arrival_price=data.get("arrival_price"),
+            implementation_shortfall_bps=data.get("implementation_shortfall_bps"),
         )

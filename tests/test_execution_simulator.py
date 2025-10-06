@@ -90,6 +90,8 @@ def test_simulate_execution_twap_basic(sample_market_data: pd.DataFrame) -> None
     assert report.total_fees > 0
     assert report.slices_completed > 0
     assert report.status in ["completed", "running"]
+    assert report.arrival_price is not None
+    assert report.implementation_shortfall_bps is not None
 
 
 def test_simulate_execution_vwap_basic(
@@ -117,6 +119,7 @@ def test_simulate_execution_vwap_basic(
     assert report.total_quantity == 10.0
     assert report.filled_quantity > 0
     assert report.status in ["completed", "running"]
+    assert report.arrival_price is not None
 
 
 def test_simulate_execution_iceberg_basic(sample_market_data: pd.DataFrame) -> None:
@@ -139,6 +142,7 @@ def test_simulate_execution_iceberg_basic(sample_market_data: pd.DataFrame) -> N
     assert report.symbol == "ATOM/USDT"
     assert report.total_quantity == 1.0
     assert report.filled_quantity > 0
+    assert report.arrival_price is not None
 
 
 def test_simulate_execution_pov_basic(
@@ -175,6 +179,7 @@ def test_simulate_execution_pov_basic(
     assert report.symbol == "SOL/USDT"
     assert report.total_quantity == 5.0
     assert report.status in ["completed", "running", "failed"]
+    assert report.arrival_price is not None
 
 
 def test_simulate_execution_slippage_applied_buy(
@@ -205,6 +210,8 @@ def test_simulate_execution_slippage_applied_buy(
     # fill_price should be around 100.5 + 0.026 = 100.526
     assert report.avg_fill_price > 100.5  # Should be higher than market close price
     assert report.avg_fill_price < 101.0  # But not by too much with small order
+    assert report.implementation_shortfall_bps is not None
+    assert report.implementation_shortfall_bps > 0
 
 
 def test_simulate_execution_slippage_applied_sell(
@@ -232,6 +239,8 @@ def test_simulate_execution_slippage_applied_sell(
     assert report.avg_fill_price > 0
     assert report.avg_fill_price < 100.5  # Should be lower than market close price
     assert report.avg_fill_price > 100.0  # But not by too much with small order
+    assert report.implementation_shortfall_bps is not None
+    assert report.implementation_shortfall_bps > 0
 
 
 def test_simulate_execution_different_slippage_models(
@@ -265,6 +274,8 @@ def test_simulate_execution_different_slippage_models(
     # (though this depends on order size and market conditions)
     assert linear_report.avg_fill_price > 0
     assert sqrt_report.avg_fill_price > 0
+    assert linear_report.arrival_price is not None
+    assert sqrt_report.arrival_price is not None
 
 
 def test_simulate_execution_fees_calculated(sample_market_data: pd.DataFrame) -> None:
@@ -290,6 +301,7 @@ def test_simulate_execution_fees_calculated(sample_market_data: pd.DataFrame) ->
     total_cost = report.filled_quantity * report.avg_fill_price
     expected_fee = total_cost * 0.001
     assert abs(report.total_fees - expected_fee) < 0.01
+    assert report.arrival_price is not None
 
 
 def test_simulate_execution_empty_market_data() -> None:
@@ -452,6 +464,7 @@ def test_simulate_execution_report_structure(sample_market_data: pd.DataFrame) -
     assert report.slices_total > 0
     assert report.status in ["completed", "running", "failed", "cancelled"]
     assert report.start_ts_ns > 0
+    assert report.arrival_price is not None
 
 
 def test_simulate_execution_quantity_conservation(

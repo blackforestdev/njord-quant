@@ -7,6 +7,8 @@ from pathlib import Path
 from backtest.contracts import BacktestConfig
 from backtest.engine import BacktestEngine, Position
 from core.contracts import OHLCVBar, OrderIntent
+from execution.simulator import ExecutionSimulator
+from execution.slippage import LinearSlippageModel
 from strategies.base import StrategyBase
 
 
@@ -83,6 +85,42 @@ class BuySellStrategy(StrategyBase):
             ]
 
         return []
+
+
+class AlgoStrategy(StrategyBase):
+    """Strategy that routes through execution simulator."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sent = False
+
+    def configure(self, config: dict[str, object]) -> None:
+        """No-op for tests."""
+
+    def on_event(self, event: object) -> list[OrderIntent]:
+        if self.sent:
+            return []
+        self.sent = True
+        return [
+            OrderIntent(
+                id="algo_order",
+                ts_local_ns=0,
+                strategy_id="algo",
+                symbol="ATOM/USDT",
+                side="buy",
+                type="market",
+                qty=5.0,
+                limit_price=None,
+                meta={
+                    "execution": {
+                        "algo_type": "TWAP",
+                        "total_quantity": 5.0,
+                        "duration_seconds": 300,
+                        "executor_params": {"slice_count": 5, "order_type": "market"},
+                    }
+                },
+            )
+        ]
 
 
 def create_test_journal(tmpdir: Path, bars: list[OHLCVBar]) -> None:
@@ -231,6 +269,49 @@ def test_backtest_engine_buy_sell() -> None:
         assert result.num_trades == 2
         # Buy at 100, sell at 105, profit = 50
         assert result.total_return_pct > 0
+
+
+def test_backtest_engine_execution_simulator_integration() -> None:
+    """Backtest engine integrates ExecutionSimulator for algorithmic intents."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        journal_dir = Path(tmpdir)
+
+        bars = [
+            OHLCVBar(
+                symbol="ATOM/USDT",
+                timeframe="1m",
+                ts_open=i * 60_000_000_000,
+                ts_close=(i + 1) * 60_000_000_000,
+                open=100.0,
+                high=101.0,
+                low=99.0,
+                close=100.0 + i * 0.5,
+                volume=5_000.0,
+            )
+            for i in range(12)
+        ]
+
+        create_test_journal(journal_dir, bars)
+
+        config = BacktestConfig(
+            symbol="ATOM/USDT",
+            strategy_id="algo",
+            start_ts=0,
+            end_ts=1_000_000_000_000,
+            initial_capital=10_000.0,
+            commission_rate=0.001,
+            slippage_bps=5.0,
+        )
+
+        simulator = ExecutionSimulator(slippage_model=LinearSlippageModel(impact_coefficient=0.001))
+        strategy = AlgoStrategy()
+        engine = BacktestEngine(config, strategy, journal_dir, execution_simulator=simulator)
+
+        result = engine.run()
+
+        assert result.num_trades == 1
+        assert engine.position.qty == 5.0
+        assert engine.cash < config.initial_capital
 
 
 def test_backtest_deterministic() -> None:
