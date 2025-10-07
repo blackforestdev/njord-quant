@@ -3,8 +3,47 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
+import logging
+from collections import OrderedDict, defaultdict
+from math import ceil
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+class _CardinalityTracker:
+    """Track label cardinality and emit warnings when thresholds are exceeded."""
+
+    warning_threshold = 100
+    max_tracked = 128
+
+    def __init__(self, metric_name: str) -> None:
+        self._metric_name = metric_name
+        self._combinations: OrderedDict[tuple[str, ...], None] = OrderedDict()
+        self._warned = False
+
+    def track(self, labels: tuple[str, ...]) -> None:
+        if not labels:
+            return
+
+        combos = self._combinations
+        if labels in combos:
+            combos.move_to_end(labels)
+        else:
+            combos[labels] = None
+            if len(combos) > self.max_tracked:
+                combos.popitem(last=False)
+
+        if len(combos) > self.warning_threshold and not self._warned:
+            logger.warning(
+                "telemetry.metric_cardinality_high",
+                extra={
+                    "metric_name": self._metric_name,
+                    "unique_combinations": len(combos),
+                    "threshold": self.warning_threshold,
+                },
+            )
+            self._warned = True
 
 
 class Counter:
@@ -26,6 +65,7 @@ class Counter:
         self.label_names = label_names or []
         self._values: dict[tuple[str, ...], float] = defaultdict(float)
         self._lock = asyncio.Lock()
+        self._cardinality = _CardinalityTracker(name)
 
     def inc(self, amount: float = 1.0, labels: dict[str, str] | None = None) -> None:
         """Increment counter.
@@ -85,7 +125,9 @@ class Counter:
                 f"for metric {self.name}"
             )
 
-        return tuple(labels[name] for name in self.label_names)
+        label_values = tuple(labels[name] for name in self.label_names)
+        self._cardinality.track(label_values)
+        return label_values
 
     def collect(self) -> list[tuple[dict[str, str], float]]:
         """Collect all label combinations and their values.
@@ -118,6 +160,7 @@ class Gauge:
         self.label_names = label_names or []
         self._values: dict[tuple[str, ...], float] = defaultdict(float)
         self._lock = asyncio.Lock()
+        self._cardinality = _CardinalityTracker(name)
 
     def set(self, value: float, labels: dict[str, str] | None = None) -> None:
         """Set gauge to specific value.
@@ -181,7 +224,9 @@ class Gauge:
                 f"for metric {self.name}"
             )
 
-        return tuple(labels[name] for name in self.label_names)
+        label_values = tuple(labels[name] for name in self.label_names)
+        self._cardinality.track(label_values)
+        return label_values
 
     def collect(self) -> list[tuple[dict[str, str], float]]:
         """Collect all label combinations and their values.
@@ -234,6 +279,7 @@ class Histogram:
             lambda: ([0] * len(self.buckets), 0.0, 0)
         )
         self._lock = asyncio.Lock()
+        self._cardinality = _CardinalityTracker(name)
 
     def observe(self, value: float, labels: dict[str, str] | None = None) -> None:
         """Observe a value (add to histogram).
@@ -290,7 +336,9 @@ class Histogram:
                 f"for metric {self.name}"
             )
 
-        return tuple(labels[name] for name in self.label_names)
+        label_values = tuple(labels[name] for name in self.label_names)
+        self._cardinality.track(label_values)
+        return label_values
 
     def collect(self) -> list[tuple[dict[str, str], list[int], float, int]]:
         """Collect all label combinations and their histogram data.
@@ -307,6 +355,95 @@ class Histogram:
         return results
 
 
+class Summary:
+    """Prometheus summary metric (observation quantiles)."""
+
+    def __init__(
+        self,
+        name: str,
+        help_text: str,
+        quantiles: list[float] | None = None,
+        label_names: list[str] | None = None,
+    ) -> None:
+        self.name = name
+        self.help_text = help_text
+        self.quantiles = quantiles or [0.5, 0.9, 0.99]
+        self.label_names = label_names or []
+        self._values: dict[tuple[str, ...], list[float]] = defaultdict(list)
+        self._sum: dict[tuple[str, ...], float] = defaultdict(float)
+        self._count: dict[tuple[str, ...], int] = defaultdict(int)
+        self._lock = asyncio.Lock()
+        self._cardinality = _CardinalityTracker(name)
+
+    def observe(self, value: float, labels: dict[str, str] | None = None) -> None:
+        label_values = self._validate_and_extract_labels(labels)
+        self._values[label_values].append(value)
+        self._sum[label_values] += value
+        self._count[label_values] += 1
+
+    def get(self, labels: dict[str, str] | None = None) -> dict[str, Any]:
+        label_values = self._validate_and_extract_labels(labels)
+        observations = list(self._values[label_values])
+        return {
+            "quantiles": self._calculate_quantiles(observations),
+            "sum": self._sum[label_values],
+            "count": self._count[label_values],
+        }
+
+    def _validate_and_extract_labels(self, labels: dict[str, str] | None) -> tuple[str, ...]:
+        if not self.label_names:
+            if labels:
+                raise ValueError(f"Metric {self.name} has no labels, but labels were provided")
+            return ()
+
+        if not labels:
+            raise ValueError(
+                f"Metric {self.name} requires labels {self.label_names}, but none provided"
+            )
+
+        label_keys = set(labels.keys())
+        expected_keys = set(self.label_names)
+        if label_keys != expected_keys:
+            raise ValueError(
+                f"Label keys {label_keys} don't match expected {expected_keys} "
+                f"for metric {self.name}"
+            )
+
+        label_values = tuple(labels[name] for name in self.label_names)
+        self._cardinality.track(label_values)
+        return label_values
+
+    def _calculate_quantiles(self, values: list[float]) -> dict[float, float]:
+        if not values:
+            return {quantile: 0.0 for quantile in self.quantiles}
+
+        sorted_vals = sorted(values)
+        result: dict[float, float] = {}
+        count = len(sorted_vals)
+        for quantile in self.quantiles:
+            if quantile <= 0:
+                result[quantile] = sorted_vals[0]
+                continue
+            if quantile >= 1:
+                result[quantile] = sorted_vals[-1]
+                continue
+            index = max(0, min(count - 1, ceil(quantile * count) - 1))
+            result[quantile] = sorted_vals[index]
+        return result
+
+    def collect(self) -> list[tuple[dict[str, str], dict[float, float], float, int]]:
+        results: list[tuple[dict[str, str], dict[float, float], float, int]] = []
+        for label_values, observations in self._values.items():
+            labels_dict = (
+                dict(zip(self.label_names, label_values, strict=True)) if self.label_names else {}
+            )
+            quantiles = self._calculate_quantiles(observations)
+            sum_val = self._sum[label_values]
+            count_val = self._count[label_values]
+            results.append((labels_dict, quantiles, sum_val, count_val))
+        return results
+
+
 class MetricRegistry:
     """Registry for storing and managing metrics."""
 
@@ -315,6 +452,7 @@ class MetricRegistry:
         self._counters: dict[str, Counter] = {}
         self._gauges: dict[str, Gauge] = {}
         self._histograms: dict[str, Histogram] = {}
+        self._summaries: dict[str, Summary] = {}
         self._lock = asyncio.Lock()
 
     async def register_counter(
@@ -336,7 +474,7 @@ class MetricRegistry:
         async with self._lock:
             if name in self._counters:
                 raise ValueError(f"Counter {name} already registered")
-            if name in self._gauges or name in self._histograms:
+            if name in self._gauges or name in self._histograms or name in self._summaries:
                 raise ValueError(f"Metric {name} already registered as different type")
 
             counter = Counter(name, help_text, label_names)
@@ -362,7 +500,7 @@ class MetricRegistry:
         async with self._lock:
             if name in self._gauges:
                 raise ValueError(f"Gauge {name} already registered")
-            if name in self._counters or name in self._histograms:
+            if name in self._counters or name in self._histograms or name in self._summaries:
                 raise ValueError(f"Metric {name} already registered as different type")
 
             gauge = Gauge(name, help_text, label_names)
@@ -393,12 +531,30 @@ class MetricRegistry:
         async with self._lock:
             if name in self._histograms:
                 raise ValueError(f"Histogram {name} already registered")
-            if name in self._counters or name in self._gauges:
+            if name in self._counters or name in self._gauges or name in self._summaries:
                 raise ValueError(f"Metric {name} already registered as different type")
 
             histogram = Histogram(name, help_text, buckets, label_names)
             self._histograms[name] = histogram
             return histogram
+
+    async def register_summary(
+        self,
+        name: str,
+        help_text: str,
+        quantiles: list[float] | None = None,
+        label_names: list[str] | None = None,
+    ) -> Summary:
+        """Register a summary metric."""
+        async with self._lock:
+            if name in self._summaries:
+                raise ValueError(f"Summary {name} already registered")
+            if name in self._counters or name in self._gauges or name in self._histograms:
+                raise ValueError(f"Metric {name} already registered as different type")
+
+            summary = Summary(name, help_text, quantiles, label_names)
+            self._summaries[name] = summary
+            return summary
 
     def get_counter(self, name: str) -> Counter | None:
         """Get counter by name."""
@@ -412,6 +568,10 @@ class MetricRegistry:
         """Get histogram by name."""
         return self._histograms.get(name)
 
+    def get_summary(self, name: str) -> Summary | None:
+        """Get summary by name."""
+        return self._summaries.get(name)
+
     def collect_all(self) -> dict[str, Any]:
         """Collect all metrics.
 
@@ -422,4 +582,5 @@ class MetricRegistry:
             "counters": {name: counter for name, counter in self._counters.items()},
             "gauges": {name: gauge for name, gauge in self._gauges.items()},
             "histograms": {name: histogram for name, histogram in self._histograms.items()},
+            "summaries": {name: summary for name, summary in self._summaries.items()},
         }

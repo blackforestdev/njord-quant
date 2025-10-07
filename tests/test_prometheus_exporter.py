@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 
 import pytest
 
+from telemetry.contracts import MetricSnapshot
 from telemetry.prometheus import PrometheusExporter
-from telemetry.registry import Counter, Gauge, Histogram, MetricRegistry
+from telemetry.registry import Counter, Gauge, Histogram, MetricRegistry, Summary
 from tests.utils import InMemoryBus
+
+try:
+    _probe_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    _probe_socket.close()
+    SOCKET_AVAILABLE = True
+except PermissionError:
+    SOCKET_AVAILABLE = False
 
 
 class TestCounter:
@@ -266,18 +275,44 @@ class TestMetricRegistry:
         counter = await registry.register_counter("test_counter", "Counter")
         gauge = await registry.register_gauge("test_gauge", "Gauge")
         histogram = await registry.register_histogram("test_histogram", "Histogram", [1.0])
+        summary = await registry.register_summary("test_summary", "Summary")
 
         all_metrics = registry.collect_all()
 
         assert all_metrics["counters"]["test_counter"] == counter
         assert all_metrics["gauges"]["test_gauge"] == gauge
         assert all_metrics["histograms"]["test_histogram"] == histogram
+        assert all_metrics["summaries"]["test_summary"] == summary
+
+    @pytest.mark.asyncio
+    async def test_registers_summary(self) -> None:
+        """Test registering summary metric."""
+        registry = MetricRegistry()
+
+        summary = await registry.register_summary("test_summary", "Test summary", [0.5, 0.9])
+
+        assert isinstance(summary, Summary)
+        assert registry.get_summary("test_summary") == summary
+
+    @pytest.mark.asyncio
+    async def test_cardinality_warning_emitted_once(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Test registry warns when label cardinality exceeds threshold."""
+        registry = MetricRegistry()
+        counter = await registry.register_counter("cardinality_total", "Cardinality", ["label"])
+
+        caplog.set_level("WARNING")
+        for i in range(105):
+            counter.inc(1.0, {"label": f"val_{i}"})
+
+        warning_messages = [record.message for record in caplog.records]
+        assert warning_messages.count("telemetry.metric_cardinality_high") == 1
 
 
 class TestPrometheusExporter:
     """Tests for PrometheusExporter."""
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_starts_and_stops_http_server(self) -> None:
         """Test starting and stopping HTTP server."""
         bus = InMemoryBus()
@@ -290,6 +325,7 @@ class TestPrometheusExporter:
         assert exporter._server is None
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_serves_metrics_at_metrics_endpoint(self) -> None:
         """Test /metrics endpoint serves metrics."""
         bus = InMemoryBus()
@@ -314,6 +350,7 @@ class TestPrometheusExporter:
             await exporter.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_returns_404_for_unknown_path(self) -> None:
         """Test returns 404 for unknown paths."""
         bus = InMemoryBus()
@@ -329,6 +366,7 @@ class TestPrometheusExporter:
             await exporter.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_requires_bearer_token_when_configured(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -361,6 +399,7 @@ class TestPrometheusExporter:
             await exporter.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_formats_counter_in_exposition_format(self) -> None:
         """Test counter formatting in Prometheus exposition format."""
         bus = InMemoryBus()
@@ -386,6 +425,7 @@ class TestPrometheusExporter:
             await exporter.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_formats_gauge_in_exposition_format(self) -> None:
         """Test gauge formatting in Prometheus exposition format."""
         bus = InMemoryBus()
@@ -407,6 +447,7 @@ class TestPrometheusExporter:
             await exporter.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_formats_histogram_in_exposition_format(self) -> None:
         """Test histogram formatting in Prometheus exposition format."""
         bus = InMemoryBus()
@@ -437,6 +478,38 @@ class TestPrometheusExporter:
             await exporter.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
+    async def test_formats_summary_in_exposition_format(self) -> None:
+        """Test summary formatting in Prometheus exposition format."""
+        bus = InMemoryBus()
+        exporter = PrometheusExporter(bus, port=19099, bind_host="127.0.0.1")
+
+        await exporter.start()
+
+        try:
+            summary = await exporter.register_summary(
+                "njord_latency_summary",
+                "Latency summary",
+                [0.5, 0.9],
+            )
+            summary.observe(0.1)
+            summary.observe(0.4)
+            summary.observe(0.9)
+
+            response = await self._http_get("127.0.0.1", 19099, "/metrics")
+
+            assert "# HELP njord_latency_summary Latency summary" in response
+            assert "# TYPE njord_latency_summary summary" in response
+            assert 'njord_latency_summary{quantile="0.50"} 0.4' in response
+            assert 'njord_latency_summary{quantile="0.90"} 0.9' in response
+            assert "njord_latency_summary_sum 1.4" in response
+            assert "njord_latency_summary_count 3" in response
+
+        finally:
+            await exporter.stop()
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_counter_persists_across_scrapes(self) -> None:
         """Test counter values persist across multiple scrapes."""
         bus = InMemoryBus()
@@ -463,6 +536,7 @@ class TestPrometheusExporter:
             await exporter.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not SOCKET_AVAILABLE, reason="socket operations not permitted")
     async def test_gauge_reflects_latest_value(self) -> None:
         """Test gauge reflects latest value."""
         bus = InMemoryBus()
@@ -481,6 +555,32 @@ class TestPrometheusExporter:
 
             response2 = await self._http_get("127.0.0.1", 19098, "/metrics")
             assert "test_gauge 50.0" in response2
+
+        finally:
+            await exporter.stop()
+
+    @pytest.mark.asyncio
+    async def test_consumes_metric_snapshots_from_bus(self) -> None:
+        """Test exporter consumes MetricSnapshot messages from bus."""
+        bus = InMemoryBus()
+        registry = MetricRegistry()
+        counter = await registry.register_counter("ingest_total", "Ingest counter", ["strategy_id"])
+        exporter = PrometheusExporter(bus, port=19100, bind_host="127.0.0.1", registry=registry)
+
+        await exporter._start_consumer()
+
+        try:
+            snapshot = MetricSnapshot(
+                name="ingest_total",
+                value=5.0,
+                timestamp_ns=0,
+                labels={"strategy_id": "alpha"},
+                metric_type="counter",
+            )
+            await bus.publish_json("telemetry.metrics", snapshot.to_dict())
+            await asyncio.sleep(0.05)
+
+            assert counter.get({"strategy_id": "alpha"}) == 5.0
 
         finally:
             await exporter.stop()

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
-from telemetry.registry import Counter, Gauge, Histogram, MetricRegistry
+from telemetry.contracts import MetricSnapshot
+from telemetry.registry import Counter, Gauge, Histogram, MetricRegistry, Summary
 
 if TYPE_CHECKING:
     from core.bus import BusProto
@@ -39,6 +42,9 @@ class PrometheusExporter:
         self.registry = registry or MetricRegistry()
         self._server: asyncio.Server | None = None
         self._bearer_token = os.getenv("NJORD_METRICS_TOKEN")
+        self._metrics_task: asyncio.Task[None] | None = None
+        self._metrics_topic = "telemetry.metrics"
+        self._logger = logging.getLogger(__name__)
 
     async def start(self) -> None:
         """Start HTTP server for /metrics endpoint.
@@ -48,13 +54,123 @@ class PrometheusExporter:
             - Optional Bearer token auth via NJORD_METRICS_TOKEN env var
         """
         self._server = await asyncio.start_server(self._handle_client, self.bind_host, self.port)
+        await self._start_consumer()
 
     async def stop(self) -> None:
         """Stop HTTP server."""
+        await self._stop_consumer()
         if self._server:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+
+    async def _start_consumer(self) -> None:
+        """Start background task consuming metric snapshots from the bus."""
+        if self._metrics_task is None:
+            self._metrics_task = asyncio.create_task(self._consume_metrics())
+
+    async def _stop_consumer(self) -> None:
+        """Stop background metric consumption."""
+        if self._metrics_task is None:
+            return
+
+        task = self._metrics_task
+        self._metrics_task = None
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def _consume_metrics(self) -> None:
+        """Consume metric snapshots from the bus and update the registry."""
+        try:
+            async for payload in self.bus.subscribe(self._metrics_topic):
+                snapshot = self._deserialize_snapshot(payload)
+                if snapshot is None:
+                    continue
+                try:
+                    await self._apply_snapshot(snapshot)
+                except Exception:
+                    self._logger.exception(
+                        "telemetry.metrics.apply_failed",
+                        extra={
+                            "metric_name": snapshot.name,
+                            "metric_type": snapshot.metric_type,
+                        },
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._logger.exception("telemetry.metrics.consumer_error")
+
+    def _deserialize_snapshot(self, payload: object) -> MetricSnapshot | None:
+        if not isinstance(payload, dict):
+            self._logger.warning(
+                "telemetry.metrics.invalid_payload_type",
+                extra={"payload_type": type(payload).__name__},
+            )
+            return None
+
+        try:
+            return MetricSnapshot.from_dict(payload)
+        except (KeyError, ValueError, TypeError) as exc:
+            self._logger.warning(
+                "telemetry.metrics.invalid_snapshot",
+                extra={"error": str(exc), "payload_keys": list(payload.keys())},
+            )
+            return None
+
+    async def _apply_snapshot(self, snapshot: MetricSnapshot) -> None:
+        labels = dict(snapshot.labels)
+        metric_type = snapshot.metric_type
+
+        if metric_type == "counter":
+            counter = self.registry.get_counter(snapshot.name)
+            if counter is None:
+                self._logger.warning(
+                    "telemetry.metrics.unregistered_metric",
+                    extra={"metric_name": snapshot.name, "metric_type": metric_type},
+                )
+                return
+            counter.inc(snapshot.value, labels or None)
+            return
+
+        if metric_type == "gauge":
+            gauge = self.registry.get_gauge(snapshot.name)
+            if gauge is None:
+                self._logger.warning(
+                    "telemetry.metrics.unregistered_metric",
+                    extra={"metric_name": snapshot.name, "metric_type": metric_type},
+                )
+                return
+            gauge.set(snapshot.value, labels or None)
+            return
+
+        if metric_type == "histogram":
+            histogram = self.registry.get_histogram(snapshot.name)
+            if histogram is None:
+                self._logger.warning(
+                    "telemetry.metrics.unregistered_metric",
+                    extra={"metric_name": snapshot.name, "metric_type": metric_type},
+                )
+                return
+            histogram.observe(snapshot.value, labels or None)
+            return
+
+        if metric_type == "summary":
+            summary = self.registry.get_summary(snapshot.name)
+            if summary is None:
+                self._logger.warning(
+                    "telemetry.metrics.unregistered_metric",
+                    extra={"metric_name": snapshot.name, "metric_type": metric_type},
+                )
+                return
+            summary.observe(snapshot.value, labels or None)
+            return
+
+        self._logger.warning(
+            "telemetry.metrics.unsupported_type",
+            extra={"metric_name": snapshot.name, "metric_type": metric_type},
+        )
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -227,6 +343,27 @@ class PrometheusExporter:
                     lines.append(f"{name}_sum{base_label_str} {sum_val}")
                     lines.append(f"{name}_count{base_label_str} {count_val}")
 
+        # Summaries
+        for name, summary in all_metrics["summaries"].items():
+            lines.append(f"# HELP {name} {summary.help_text}")
+            lines.append(f"# TYPE {name} summary")
+            samples = summary.collect()
+            if not samples:
+                base_label_str = self._format_labels({})
+                lines.append(f"{name}_count{base_label_str} 0")
+                lines.append(f"{name}_sum{base_label_str} 0.0")
+                continue
+
+            for labels_dict, quantiles, sum_val, count_val in samples:
+                for quantile, value in quantiles.items():
+                    labels_with_quantile = {**labels_dict, "quantile": f"{quantile:.2f}"}
+                    label_str = self._format_labels(labels_with_quantile)
+                    lines.append(f"{name}{label_str} {value}")
+
+                base_label_str = self._format_labels(labels_dict)
+                lines.append(f"{name}_sum{base_label_str} {sum_val}")
+                lines.append(f"{name}_count{base_label_str} {count_val}")
+
         # Add final newline
         return "\n".join(lines) + "\n" if lines else ""
 
@@ -292,3 +429,13 @@ class PrometheusExporter:
             Histogram instance
         """
         return await self.registry.register_histogram(name, help_text, buckets, labels)
+
+    async def register_summary(
+        self,
+        name: str,
+        help_text: str,
+        quantiles: list[float] | None = None,
+        labels: list[str] | None = None,
+    ) -> Summary:
+        """Register a summary metric."""
+        return await self.registry.register_summary(name, help_text, quantiles, labels)
