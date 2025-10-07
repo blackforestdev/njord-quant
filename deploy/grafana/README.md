@@ -169,6 +169,11 @@ Grafana will automatically load the datasources and dashboards on startup.
 
 **Refresh**: Auto-refresh every 5 seconds
 
+
+## Future Metrics
+
+Some dashboard panels reference metrics planned for later telemetry phases (e.g., `njord_memory_usage_mb`, `njord_fill_latency_seconds_bucket`). These remain in the dashboards as placeholders so the visualizations light up automatically once the metrics ship. Until then, those queries may render empty results.
+
 ## Alerting
 
 ### Recommended Alert Rules

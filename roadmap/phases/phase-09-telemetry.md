@@ -323,6 +323,9 @@ async def process_event(self, event: TradeEvent) -> None:
 - Test validates JSON structure
 - `make fmt lint type test` green
 
+**Polish / Follow-ups (Phase 9.3):**
+- Once later telemetry phases ship additional metrics (`njord_memory_usage_mb`, `njord_fill_latency_seconds_bucket`, etc.), revisit dashboards to confirm those panels populate correctly
+
 ---
 
 ### Phase 9.4 — Metric Aggregation Service 📋
