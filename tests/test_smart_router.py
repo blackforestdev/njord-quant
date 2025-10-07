@@ -56,6 +56,27 @@ class FailingExecutor(BaseExecutor):
         raise RuntimeError("Executor failure simulation")
 
 
+class MinimalMetaExecutor(BaseExecutor):
+    """Executor that omits execution metadata to test router augmentation."""
+
+    def __init__(self, strategy_id: str) -> None:
+        super().__init__(strategy_id)
+
+    async def plan_execution(self, algo: ExecutionAlgorithm) -> list[OrderIntent]:
+        intent = OrderIntent(
+            id=f"intent_{uuid.uuid4().hex[:8]}",
+            ts_local_ns=int(time.time() * 1e9),
+            strategy_id=self.strategy_id,
+            symbol=algo.symbol,
+            side=algo.side,
+            type="market",
+            qty=algo.total_quantity,
+            limit_price=None,
+            meta={},
+        )
+        return [intent]
+
+
 @pytest.mark.asyncio
 async def test_router_initializes_with_executors() -> None:
     """Test router initialization with executor dict."""
@@ -298,6 +319,36 @@ async def test_router_packs_execution_metadata() -> None:
     assert intent_meta["execution_id"] == execution_id
     assert "algo_type" in intent_meta
     assert intent_meta["algo_type"] == "TWAP"
+
+
+@pytest.mark.asyncio
+async def test_router_injects_metadata_when_missing() -> None:
+    """Router should augment intents without execution metadata."""
+    bus = InMemoryBus()
+    executors = {
+        "TWAP": MinimalMetaExecutor("test"),
+    }
+    router = SmartOrderRouter(bus, executors)
+
+    parent_intent = OrderIntent(
+        id="parent_minimal",
+        ts_local_ns=int(time.time() * 1e9),
+        strategy_id="test",
+        symbol="BTC/USDT",
+        side="buy",
+        type="market",
+        qty=4.0,
+        limit_price=None,
+    )
+
+    execution_id = await router.route_order(parent_intent)
+
+    published_meta = bus.published["strat.intent"][0]["intent"]["meta"]
+    assert published_meta["execution_id"] == execution_id
+    assert published_meta["parent_intent_id"] == parent_intent.id
+    assert published_meta["algo_type"] == "TWAP"
+    assert published_meta["slice_idx"] == 0
+    assert published_meta["slice_id"] == f"{execution_id}_slice_0"
 
 
 @pytest.mark.asyncio

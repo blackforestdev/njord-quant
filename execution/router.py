@@ -9,12 +9,22 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from dataclasses import replace
+from typing import Any, Literal, cast
 
 from core.bus import BusProto
 from core.contracts import OrderIntent
 from execution.base import BaseExecutor
 from execution.contracts import ExecutionAlgorithm
+
+AlgoType = Literal["TWAP", "VWAP", "Iceberg", "POV"]
+
+
+def _validate_algo_type(value: str) -> AlgoType:
+    allowed: tuple[str, ...] = ("TWAP", "VWAP", "Iceberg", "POV")
+    if value not in allowed:
+        raise ValueError(f"Unsupported execution algorithm: {value!r}")
+    return cast(AlgoType, value)
 
 
 class SmartOrderRouter:
@@ -84,11 +94,12 @@ class SmartOrderRouter:
         market_conditions = self._get_market_conditions(parent_intent.symbol)
 
         # Select optimal algorithm
-        algo_type = self._select_algorithm(
+        algo_type_str = self._select_algorithm(
             parent_intent,
             urgency_seconds,
             market_conditions,
         )
+        algo_type = _validate_algo_type(algo_type_str)
 
         # Verify executor availability
         if algo_type not in self.executors:
@@ -102,7 +113,7 @@ class SmartOrderRouter:
         duration_seconds = urgency_seconds or self._default_duration(parent_intent.qty)
 
         algo = ExecutionAlgorithm(
-            algo_type=algo_type,  # type: ignore[arg-type]
+            algo_type=algo_type,
             symbol=parent_intent.symbol,
             side=parent_intent.side,
             total_quantity=parent_intent.qty,
@@ -117,6 +128,8 @@ class SmartOrderRouter:
         await self._orchestrate_execution(
             self.executors[algo_type],
             algo,
+            execution_id,
+            parent_intent.id,
         )
 
         return execution_id
@@ -171,6 +184,8 @@ class SmartOrderRouter:
         self,
         executor: BaseExecutor,
         algo: ExecutionAlgorithm,
+        execution_id: str,
+        parent_intent_id: str,
     ) -> None:
         """Orchestrate execution: plan + publish OrderIntents.
 
@@ -195,8 +210,18 @@ class SmartOrderRouter:
                 f"Executor {type(executor).__name__} failed to plan execution: {exc}"
             ) from exc
 
+        augmented: list[OrderIntent] = []
+        for idx, intent in enumerate(intents):
+            meta = dict(intent.meta)
+            meta.setdefault("execution_id", execution_id)
+            meta.setdefault("parent_intent_id", parent_intent_id)
+            meta.setdefault("algo_type", algo.algo_type)
+            meta.setdefault("slice_idx", idx)
+            meta.setdefault("slice_id", f"{execution_id}_slice_{idx}")
+            augmented.append(replace(intent, meta=meta))
+
         # Publish OrderIntents to bus (risk engine flow)
-        for intent in intents:
+        for intent in augmented:
             await self.bus.publish_json(
                 "strat.intent",
                 {

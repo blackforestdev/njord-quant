@@ -350,12 +350,15 @@ class ImplementationClass:
 - <Test scenario 2 (e.g., "Test includes multiple replenishment cycles")>
 - **Round-trip verification (if applicable): "Test verifies DataStructureA → Transformation → DataStructureB recovery"**
 - **Critical path test: "Test verifies <architectural boundary> is enforced (e.g., no broker bypass)"**
-- **Integration tests (if Redis-dependent module):**
-  - Unit tests use `InMemoryBus` (no Redis dependency)
-  - Integration test verifies Redis pub/sub round-trip (gated, localhost only)
-  - Test includes skip guard: `if os.getenv("REDIS_SKIP") == "1": pytest.skip()`
-  - Docker Compose config binds to 127.0.0.1 only (verified in test)
+- **Integration tests (REQUIRED for Redis pub/sub, event bus, or Redis-dependent modules):**
+  - Unit tests MUST use `InMemoryBus` (no Redis dependency)
+  - Integration test MUST verify Redis pub/sub round-trip (gated, localhost only)
+  - Test MUST include skip guard: `if os.getenv("REDIS_SKIP") == "1": pytest.skip()`
+  - Test MUST be marked: `@pytest.mark.integration`
+  - Docker Compose config MUST bind to 127.0.0.1 only (verified in test)
+  - Integration test MUST be run during verification and audit loops
 - `make fmt lint type test` green
+- **Integration tests green (if Redis-dependent module)**
 - **Audit must PASS (zero High/Medium findings)**
 ```
 
@@ -411,12 +414,16 @@ When a user says **"Implement Phase X.Y — Sub-Phase Title"**, the code agent m
    make fmt && make lint && make type && make test
    # If red → fix errors → rerun until green
 
-   # Integration tests (when acceptance criteria require Redis)
+   # Integration tests (REQUIRED for Redis-dependent modules)
+   # MUST run when implementing pub/sub, event bus, or any Redis interaction
    docker-compose -f docker-compose.test.yml up -d redis
    docker-compose -f docker-compose.test.yml exec redis redis-cli ping  # Verify ready
    PYTHONPATH=. pytest -v -m integration  # Run integration-marked tests
    docker-compose -f docker-compose.test.yml down
    # If red → fix errors → rerun
+
+   # ⚠️  CRITICAL: Do not skip integration tests for Redis modules
+   # The framework is Redis-dependent - skipping tests accumulates debt
 
    # If all green → proceed to audit
    ```
@@ -429,6 +436,9 @@ When a user says **"Implement Phase X.Y — Sub-Phase Title"**, the code agent m
    │    → Make corrections                  │
    │    → Re-run affected checks:           │
    │       • Code → make fmt lint type test │
+   │       • Redis modules → integration    │
+   │         tests (docker-compose up +     │
+   │         pytest -m integration)         │
    │       • Docs only → skip tests         │
    │    → Re-audit                          │
    │    → Loop until zero High/Medium       │
@@ -727,6 +737,13 @@ from core.contracts import OrderIntent
 - [ ] Unit tests for new functions/classes
 - [ ] Integration test for new service interactions
 - [ ] Golden test for deterministic outputs (if applicable)
+- [ ] **Redis integration tests (REQUIRED for pub/sub, event bus, or Redis-dependent modules):**
+  - [ ] Unit tests use `InMemoryBus` (no network I/O)
+  - [ ] Integration test verifies Redis pub/sub round-trip
+  - [ ] Test marked with `@pytest.mark.integration`
+  - [ ] Skip guard implemented: `if os.getenv("REDIS_SKIP") == "1": pytest.skip()`
+  - [ ] Docker Compose verified: `127.0.0.1` binding only (no `0.0.0.0`)
+  - [ ] Integration test run during verification: `docker-compose -f docker-compose.test.yml up -d redis && pytest -v -m integration`
 
 ✅ **Audit** (Production Quality Gate)
 
@@ -745,6 +762,8 @@ from core.contracts import OrderIntent
   │ 2. Re-run affected checks:            │
   │    • Code changed? → make fmt lint    │
   │      type test                        │
+  │    • Redis modules? → integration     │
+  │      tests (docker-compose + pytest)  │
   │    • Docs only? → skip tests          │
   │    • Tests added? → make test         │
   │ 3. Re-audit implementation            │
@@ -757,6 +776,7 @@ from core.contracts import OrderIntent
   - User approves applying? → make corrections → re-check → re-audit
   - User defers? → document in commit message
 - [ ] Final verification: make fmt lint type test (all green)
+- [ ] **Redis modules:** Integration tests green (docker-compose.test.yml + pytest -m integration)
 - [ ] Audit must PASS before proceeding to Commit
 
 ✅ **Commit:** (Only After Audit Passes)
