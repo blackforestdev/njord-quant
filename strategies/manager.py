@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import asdict
 from typing import Any
 
@@ -9,6 +10,7 @@ from core.contracts import PositionSnapshot
 from strategies.base import StrategyBase
 from strategies.context import BusProto, StrategyContext
 from strategies.registry import StrategyRegistry
+from telemetry.instrumentation import MetricsEmitter
 
 __all__ = ["StrategyManager"]
 
@@ -18,7 +20,9 @@ logger = logging.getLogger(__name__)
 class StrategyManager:
     """Manages strategy lifecycle: loading, reloading, event dispatching."""
 
-    def __init__(self, registry: StrategyRegistry, bus: BusProto) -> None:
+    def __init__(
+        self, registry: StrategyRegistry, bus: BusProto, metrics: MetricsEmitter | None = None
+    ) -> None:
         self._registry = registry
         self._bus = bus
         self._strategies: dict[str, StrategyBase] = {}
@@ -27,6 +31,7 @@ class StrategyManager:
         self._prices: dict[str, float] = {}
         self._subscriptions: list[asyncio.Task[None]] = []
         self._stop_event = asyncio.Event()
+        self._metrics = metrics or MetricsEmitter(bus)
 
     async def load(self, config: dict[str, Any]) -> None:
         """Load strategies from config dict."""
@@ -134,15 +139,7 @@ class StrategyManager:
         try:
             async for event in self._bus.subscribe(topic):
                 try:
-                    # Dispatch to strategy
-                    intents = strategy.on_event(event)
-
-                    # Publish resulting intents
-                    for intent in intents:
-                        intent_dict = asdict(intent)
-                        await self._bus.publish_json("strat.intent", intent_dict)
-                        logger.debug(f"Published intent from {strategy_id}: {intent.id}")
-
+                    await self._process_event(strategy_id, strategy, event)
                 except Exception as e:
                     logger.error(f"Strategy {strategy_id} error on event: {e}", exc_info=True)
                     # Continue processing (graceful degradation)
@@ -154,3 +151,37 @@ class StrategyManager:
     def stop(self) -> None:
         """Signal manager to stop."""
         self._stop_event.set()
+
+    async def _process_event(self, strategy_id: str, strategy: StrategyBase, event: Any) -> None:
+        metrics_enabled = self._metrics.is_enabled()
+        start = time.perf_counter()
+        try:
+            intents_iter = strategy.on_event(event)
+        except Exception:
+            if metrics_enabled:
+                await self._metrics.emit_counter(
+                    "njord_strategy_errors_total",
+                    1.0,
+                    {"strategy_id": strategy_id},
+                )
+            raise
+        intents = list(intents_iter)
+        duration = time.perf_counter() - start
+
+        if metrics_enabled:
+            await self._metrics.emit_histogram(
+                "njord_signal_generation_duration_seconds",
+                duration,
+                {"strategy_id": strategy_id},
+            )
+            if intents:
+                await self._metrics.emit_counter(
+                    "njord_signals_generated_total",
+                    float(len(intents)),
+                    {"strategy_id": strategy_id},
+                )
+
+        for intent in intents:
+            intent_dict = asdict(intent)
+            await self._bus.publish_json("strat.intent", intent_dict)
+            logger.debug(f"Published intent from {strategy_id}: {intent.id}")

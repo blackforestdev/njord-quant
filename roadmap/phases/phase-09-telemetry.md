@@ -175,8 +175,8 @@ njord_execution_slippage_bps{algo_type}
 
 ---
 
-### Phase 9.2 — Service Instrumentation 📋
-**Status:** Planned
+### Phase 9.2 — Service Instrumentation ✅
+**Status:** Complete
 **Dependencies:** 9.1 (Prometheus Metrics Exporter)
 **Task:** Instrument core services with metrics collection
 
@@ -256,6 +256,12 @@ async def process_event(self, event: TradeEvent) -> None:
 - Test verifies metrics disabled when NJORD_ENABLE_METRICS unset
 - Test verifies service continues if bus unavailable (fallback to local logging)
 - `make fmt lint type test` green
+
+**Polish / Follow-ups:**
+- Revalidate external consumers of `RiskEngine.handle_intent` now that the method returns `(allowed, reason)`
+- Consider increasing iterations in the performance benchmark to reduce flakiness risk
+- Add docstrings noting metrics emission on instrumented service methods
+- Reconfirm `StrategyManager` metrics once broader instrumentation dependencies land
 
 ---
 

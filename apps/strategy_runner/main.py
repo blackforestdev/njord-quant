@@ -11,6 +11,7 @@ from core.config import load_config
 from core.logging import setup_json_logging
 from strategies.manager import StrategyManager
 from strategies.registry import StrategyRegistry
+from telemetry.instrumentation import MetricsEmitter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,7 +67,8 @@ async def main() -> None:
         logger.info("Discovered strategies", count=len(registry._strategies))
 
         # Initialize manager
-        manager = StrategyManager(registry, bus)
+        metrics = MetricsEmitter(bus)
+        manager = StrategyManager(registry, bus, metrics)
 
         # Load strategies from config
         await manager.load(strategies_config)

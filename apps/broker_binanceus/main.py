@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import time
+from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
@@ -21,6 +22,7 @@ from core.config import Config, load_config
 from core.contracts import OrderIntent
 from core.journal import NdjsonJournal
 from core.logging import setup_json_logging
+from telemetry.instrumentation import MetricsEmitter
 
 BALANCE_TOPIC = "broker.balances"
 OPEN_ORDERS_TOPIC = "broker.orders"
@@ -89,6 +91,7 @@ class OrderEngine:
         add_inflight: Callable[[str], Awaitable[None]],
         last_trade_price: dict[str, float],
         live_enabled: bool,
+        metrics: MetricsEmitter | None = None,
     ) -> None:
         self._broker = broker
         self._bus = bus
@@ -100,6 +103,9 @@ class OrderEngine:
         self._last_trade_price = last_trade_price
         self._live_enabled = live_enabled
         self._halt_detail: dict[str, Any] = {}
+        self._metrics = metrics or MetricsEmitter(bus)
+        self._open_orders_by_symbol: dict[str, int] = defaultdict(int)
+        self._client_symbol: dict[str, str] = {}
 
     @property
     def price_cache(self) -> dict[str, float]:
@@ -131,12 +137,23 @@ class OrderEngine:
 
         req = map_intent_to_broker(intent)
 
+        metrics_enabled = self._metrics.is_enabled()
+        if metrics_enabled:
+            await self._metrics.emit_counter(
+                "njord_orders_placed_total",
+                1.0,
+                {"venue": self._config.exchange.venue},
+            )
+
         if not await self._enforce_micro_cap(intent, req):
             return
 
         ack = self._broker.place(req)
         await self._publish_ack(ack)
         await self._add_inflight(req.client_order_id)
+        self._register_inflight(req.client_order_id, intent.symbol)
+        if metrics_enabled:
+            await self._emit_open_orders(intent.symbol)
 
     async def _publish_echo(self, intent: OrderIntent, req: BrokerOrderReq) -> None:
         payload = {
@@ -223,6 +240,53 @@ class OrderEngine:
         }
         await self._bus.publish_json(RISK_DECISIONS_TOPIC, payload)
 
+    def _register_inflight(self, client_order_id: str, symbol: str) -> None:
+        self._client_symbol[client_order_id] = symbol
+        self._open_orders_by_symbol[symbol] += 1
+
+    async def register_inflight_removal(self, client_order_id: str) -> None:
+        symbol = self._client_symbol.pop(client_order_id, None)
+        if not symbol:
+            return
+        current = max(self._open_orders_by_symbol.get(symbol, 1) - 1, 0)
+        if current:
+            self._open_orders_by_symbol[symbol] = current
+        else:
+            self._open_orders_by_symbol.pop(symbol, None)
+        if self._metrics.is_enabled():
+            await self._metrics.emit_gauge(
+                "njord_open_orders",
+                float(current),
+                {"symbol": symbol},
+            )
+
+    async def _emit_open_orders(self, symbol: str) -> None:
+        if not self._metrics.is_enabled():
+            return
+        current = float(self._open_orders_by_symbol.get(symbol, 0))
+        await self._metrics.emit_gauge(
+            "njord_open_orders",
+            current,
+            {"symbol": symbol},
+        )
+
+    async def record_fill_metrics(self, symbol: str, avg_price: float | None) -> None:
+        if not self._metrics.is_enabled() or avg_price is None:
+            return
+        await self._metrics.emit_counter(
+            "njord_fills_generated_total",
+            1.0,
+            {"venue": self._config.exchange.venue},
+        )
+        ref_price = self._last_trade_price.get(symbol)
+        if ref_price and ref_price > 0:
+            deviation = abs((avg_price - ref_price) / ref_price) * 10_000.0
+            await self._metrics.emit_histogram(
+                "njord_fill_price_deviation_bps",
+                deviation,
+                {"symbol": symbol},
+            )
+
 
 async def run(config: Config) -> None:
     log_dir = Path(config.logging.journal_dir)
@@ -241,6 +305,7 @@ async def run(config: Config) -> None:
 
     inflight_lock = asyncio.Lock()
     inflight_client_ids: set[str] = set()
+    engine_ref: OrderEngine | None = None
 
     async def add_inflight(client_order_id: str) -> None:
         async with inflight_lock:
@@ -249,6 +314,8 @@ async def run(config: Config) -> None:
     async def remove_inflight(client_order_id: str) -> None:
         async with inflight_lock:
             inflight_client_ids.discard(client_order_id)
+        if engine_ref is not None:
+            await engine_ref.register_inflight_removal(client_order_id)
 
     async def snapshot_inflight() -> set[str]:
         async with inflight_lock:
@@ -271,6 +338,8 @@ async def run(config: Config) -> None:
         interval_s=reconcile_interval,
     )
 
+    metrics = MetricsEmitter(bus)
+
     engine = OrderEngine(
         broker=broker,
         bus=bus,
@@ -281,7 +350,9 @@ async def run(config: Config) -> None:
         add_inflight=add_inflight,
         last_trade_price=last_trade_price,
         live_enabled=live_enabled,
+        metrics=metrics,
     )
+    engine_ref = engine
 
     async def publish_open_orders_snapshot() -> None:
         try:
@@ -341,6 +412,14 @@ async def run(config: Config) -> None:
                     client_id = update.raw.get("clientOrderId")
                     if client_id and update.status in TERMINAL_STATUSES:
                         await remove_inflight(str(client_id))
+                    symbol = str(
+                        update.raw.get("symbol")
+                        or update.raw.get("s")
+                        or update.raw.get("Symbol")
+                        or "unknown"
+                    )
+                    if update.status == "FILLED":
+                        await engine.record_fill_metrics(symbol, update.avg_price)
                 if updates:
                     log.info("open_orders", count=len(updates))
 

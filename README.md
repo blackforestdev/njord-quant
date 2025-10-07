@@ -323,6 +323,16 @@ make phase-current # Open current phase file
 make phase NUM=8   # Open specific phase file
 ```
 
+### Polish Backlog Workflow
+
+Pending polish items are tracked alongside the roadmap so they do not get lost:
+
+1. When a sub-phase closes, capture any optional improvements in a short "Polish / Follow-ups" list inside that phase file (e.g. `roadmap/phases/phase-09-telemetry.md`).
+2. Mirror those bullets in the global backlog at the end of `ROADMAP_REFACTOR_PLAN.md`.
+3. When the item is addressed (either by a later sub-phase or during Phase 16), remove it from both lists so the backlog stays current.
+
+This keeps polish tasks visible next to their context while providing a single checklist for the Phase 16 optimization sweep.
+
 ### Service Execution
 
 ```bash

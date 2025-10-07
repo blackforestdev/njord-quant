@@ -13,6 +13,7 @@ from core.bus import Bus
 from core.config import Config, load_config
 from core.journal import NdjsonJournal
 from core.logging import setup_json_logging
+from telemetry.instrumentation import MetricsEmitter
 
 
 class BusProto(Protocol):
@@ -35,9 +36,13 @@ class PaperTrader:
     journal_dir: Path
     positions: dict[str, PositionState] = field(default_factory=dict)
     last_trade_price: dict[str, float] = field(default_factory=dict)
+    _metrics: MetricsEmitter = field(init=False)
+    _venue: str = field(init=False)
 
     def __post_init__(self) -> None:
         self._journals: dict[str, NdjsonJournal] = {}
+        self._metrics = MetricsEmitter(self.bus)
+        self._venue = self.config.exchange.venue
 
     async def run(self) -> None:
         orders_topic = "orders.accepted"
@@ -66,6 +71,14 @@ class PaperTrader:
         qty = float(order["qty"])
         limit_price = order.get("limit_price")
         last_price = self.last_trade_price.get(symbol)
+        metrics_enabled = self._metrics.is_enabled()
+
+        if metrics_enabled:
+            await self._metrics.emit_counter(
+                "njord_orders_placed_total",
+                1.0,
+                {"venue": self._venue},
+            )
 
         fill_price, meta = self._determine_fill_price(side, order_type, limit_price, last_price)
         self.last_trade_price[symbol] = fill_price
@@ -84,9 +97,36 @@ class PaperTrader:
         }
         await self.bus.publish_json("fills.new", fill_event)
 
+        if metrics_enabled:
+            await self._metrics.emit_counter(
+                "njord_fills_generated_total",
+                1.0,
+                {"venue": self._venue},
+            )
+
         snapshot = self._snapshot(symbol)
         await self.bus.publish_json("positions.snapshot", snapshot)
         self._write_snapshot(symbol, snapshot)
+
+        if metrics_enabled:
+            strategy_id = str(order.get("strategy_id", "unknown"))
+            await self._metrics.emit_gauge(
+                "njord_position_size",
+                snapshot["qty"],
+                {"strategy_id": strategy_id, "symbol": symbol},
+            )
+            await self._metrics.emit_gauge(
+                "njord_open_orders",
+                0.0,
+                {"symbol": symbol},
+            )
+            if last_price and last_price > 0:
+                deviation = ((fill_price - last_price) / last_price) * 10_000.0
+                await self._metrics.emit_histogram(
+                    "njord_fill_price_deviation_bps",
+                    abs(deviation),
+                    {"symbol": symbol},
+                )
 
     def _determine_fill_price(
         self,

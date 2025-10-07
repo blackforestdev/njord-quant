@@ -994,6 +994,15 @@ echo "  3. Commit changes: git add . && git commit -m 'refactor(roadmap): split 
 
 ---
 
+### Polish Backlog (Phase 16 Sweep Targets)
+
+- Revalidate external consumers of the new `(allowed, reason)` return signature in `RiskEngine.handle_intent`
+- Consider increasing iterations in the instrumentation performance benchmark to reduce flakiness risk
+- Add docstrings indicating metrics emission on instrumented service methods
+- Reconfirm `StrategyManager` metrics once dependent services are fully instrumented
+
+---
+
 **Status:** Ready for implementation with acceptance criteria
 **Estimated Effort:** 2-3 hours
 **Risk:** Low (backup created, rollback plan in place, comprehensive tests)
