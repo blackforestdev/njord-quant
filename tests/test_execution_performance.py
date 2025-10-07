@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import time
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -64,6 +67,28 @@ def test_implementation_shortfall_zero_slippage(tracker: ExecutionPerformanceTra
     assert shortfall["fees_bps"] == pytest.approx(0.1, abs=0.01)
     assert shortfall["market_impact_bps"] == pytest.approx(0.0, abs=0.01)
     assert shortfall["timing_cost_bps"] == pytest.approx(0.0, abs=0.01)
+
+
+def test_implementation_shortfall_invalid_arrival(tracker: ExecutionPerformanceTracker) -> None:
+    """Arrival price must be positive."""
+    report = ExecutionReport(
+        execution_id="twap_invalid",
+        symbol="BTC/USDT",
+        total_quantity=1.0,
+        filled_quantity=1.0,
+        remaining_quantity=0.0,
+        avg_fill_price=100.0,
+        total_fees=0.0,
+        slices_completed=1,
+        slices_total=1,
+        status="completed",
+        start_ts_ns=1,
+        end_ts_ns=2,
+        arrival_price=100.0,
+    )
+
+    with pytest.raises(ValueError, match="arrival_price must be > 0"):
+        tracker.calculate_implementation_shortfall(report, 0.0)
 
 
 def test_implementation_shortfall_with_slippage(tracker: ExecutionPerformanceTracker) -> None:
@@ -231,6 +256,27 @@ def test_compare_to_twap_benchmark(tracker: ExecutionPerformanceTracker) -> None
 
     # (50050 - 50000) / 50000 * 10000 = 10 bps
     assert deviation == pytest.approx(10.0, abs=0.1)
+
+
+def test_compare_to_twap_missing_arrival_price(tracker: ExecutionPerformanceTracker) -> None:
+    """TWAP benchmark requires arrival price."""
+    report = ExecutionReport(
+        execution_id="twap_missing",
+        symbol="BTC/USDT",
+        total_quantity=1.0,
+        filled_quantity=1.0,
+        remaining_quantity=0.0,
+        avg_fill_price=100.0,
+        total_fees=0.0,
+        slices_completed=1,
+        slices_total=1,
+        status="completed",
+        start_ts_ns=1,
+        end_ts_ns=2,
+    )
+
+    with pytest.raises(ValueError, match="missing arrival_price"):
+        tracker.compare_to_benchmark(report, "twap")
 
 
 def test_compare_to_benchmark_no_fills(tracker: ExecutionPerformanceTracker) -> None:
@@ -474,28 +520,77 @@ def test_analyze_algorithm_performance_no_fills(
     assert len(df) == 0
 
 
-def test_score_venue_quality_returns_metrics(tracker: ExecutionPerformanceTracker) -> None:
+def test_score_venue_quality_returns_metrics(
+    tracker: ExecutionPerformanceTracker,
+    temp_journal_dir: TemporaryDirectory[str],
+) -> None:
     """Test venue quality scoring returns expected metrics."""
-    score = tracker.score_venue_quality("binanceus", "BTC/USDT", lookback_days=30)
+    # Prepare journal with fills for venue scoring
+    pytest.importorskip("pandas")
 
-    # Should return dict with required keys
-    assert "avg_slippage_bps" in score
-    assert "fill_rate" in score
-    assert "avg_latency_ms" in score
+    now_ns = time.time_ns()
+    order1_ns = now_ns - 3_000_000_000
+    order2_ns = now_ns - 2_000_000_000
+    fills_path = Path(temp_journal_dir.name) / "fills.ndjson"
+    fills_path.parent.mkdir(parents=True, exist_ok=True)
+    records = [
+        {
+            "order_id": "1",
+            "symbol": "BTC/USDT",
+            "side": "buy",
+            "qty": 5.0,
+            "price": 101.0,
+            "ts_fill_ns": order1_ns + 1_000_000_000,
+            "meta": {
+                "venue": "binanceus",
+                "arrival_price": 100.0,
+                "requested_qty": 6.0,
+                "ts_order_ns": order1_ns,
+            },
+        },
+        {
+            "order_id": "2",
+            "symbol": "BTC/USDT",
+            "side": "buy",
+            "qty": 3.0,
+            "price": 100.5,
+            "ts_fill_ns": order2_ns + 1_500_000_000,
+            "meta": {
+                "venue": "binanceus",
+                "arrival_price": 100.0,
+                "requested_qty": 4.0,
+                "ts_order_ns": order2_ns,
+            },
+        },
+        {
+            "order_id": "3",
+            "symbol": "BTC/USDT",
+            "side": "buy",
+            "qty": 2.0,
+            "price": 99.0,
+            "ts_fill_ns": order1_ns + 2_000_000_000,
+            "meta": {
+                "venue": "coinbase",
+                "arrival_price": 99.5,
+                "requested_qty": 2.0,
+                "ts_order_ns": order1_ns,
+            },
+        },
+    ]
 
-    # Placeholder values should be reasonable
-    assert score["avg_slippage_bps"] > 0
-    assert 0 <= score["fill_rate"] <= 100
-    assert score["avg_latency_ms"] > 0
+    with fills_path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record) + "\n")
 
+    score = tracker.score_venue_quality("binanceus", "BTC/USDT", lookback_days=1)
 
-def test_score_venue_quality_different_venues(tracker: ExecutionPerformanceTracker) -> None:
-    """Test venue quality scoring for different venues (placeholder values)."""
-    score1 = tracker.score_venue_quality("binanceus", "BTC/USDT")
-    score2 = tracker.score_venue_quality("coinbase", "ETH/USDT")
+    expected_slippage = ((101 - 100) / 100 * 10000 + (100.5 - 100) / 100 * 10000) / 2
+    expected_fill_rate = ((5 + 3) / (6 + 4)) * 100
+    expected_latency = ((1_000_000_000 / 1_000_000) + (1_500_000_000 / 1_000_000)) / 2
 
-    # Both should return valid metrics
-    assert score1 is not None
-    assert score2 is not None
-    assert "avg_slippage_bps" in score1
-    assert "avg_slippage_bps" in score2
+    assert score["avg_slippage_bps"] == pytest.approx(expected_slippage, abs=1e-6)
+    assert score["fill_rate"] == pytest.approx(expected_fill_rate, abs=1e-6)
+    assert score["avg_latency_ms"] == pytest.approx(expected_latency, abs=1e-6)
+
+    other_score = tracker.score_venue_quality("coinbase", "BTC/USDT", lookback_days=1)
+    assert other_score["avg_slippage_bps"] != score["avg_slippage_bps"]

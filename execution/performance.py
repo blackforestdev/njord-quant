@@ -6,6 +6,8 @@ implementation shortfall, comparing to benchmarks, and scoring venue performance
 
 from __future__ import annotations
 
+import time
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from execution.contracts import ExecutionReport
@@ -63,6 +65,9 @@ class ExecutionPerformanceTracker:
             Positive values indicate worse performance (higher costs).
             For sell orders, price impact is inverted (lower price = worse).
         """
+        if arrival_price <= 0:
+            raise ValueError("arrival_price must be > 0")
+
         # Handle edge case: no fills
         if report.filled_quantity == 0:
             return {
@@ -144,16 +149,16 @@ class ExecutionPerformanceTracker:
             # TWAP benchmark is average fill price over execution period
             # For simplicity, use arrival price as TWAP estimate
             # TODO(future): Calculate actual TWAP from market data via DataReader
-            if report.arrival_price is not None:
-                benchmark_price = report.arrival_price
-            else:
-                # Fallback: Use avg fill price (zero deviation)
-                return 0.0
+            if report.arrival_price is None:
+                raise ValueError("ExecutionReport missing arrival_price for twap benchmark")
+            benchmark_price = report.arrival_price
 
         else:
             raise ValueError(f"Unknown benchmark: {benchmark!r}")
 
-        # Calculate deviation in basis points
+        if benchmark_price <= 0:
+            raise ValueError("benchmark price must be > 0")
+
         price_diff = report.avg_fill_price - benchmark_price
         deviation_bps = (price_diff / benchmark_price) * 10000
 
@@ -290,17 +295,80 @@ class ExecutionPerformanceTracker:
             Current implementation returns placeholder values.
             TODO(future): Integrate with DataReader to compute from historical fills
         """
-        # Placeholder implementation for Phase 8.9
-        # TODO: Integrate with DataReader.read_fills() to compute actual metrics
-        #
-        # Future implementation:
-        # 1. Read fills from DataReader for venue + symbol + time window
-        # 2. Calculate slippage vs mid price at fill time
-        # 3. Compute fill rate (filled orders / total orders)
-        # 4. Calculate latency (time from order to fill)
+        end_ts = int(time.time_ns())
+        start_ts = end_ts - int(lookback_days * 24 * 60 * 60 * 1_000_000_000)
+
+        fills = self.data_reader.read_fills(
+            strategy_id=None,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            format="pandas",
+        )
+
+        try:
+            import pandas as pd
+        except ModuleNotFoundError:  # pragma: no cover - optional dependency missing
+            return {"avg_slippage_bps": 0.0, "fill_rate": 0.0, "avg_latency_ms": 0.0}
+
+        if fills is None:
+            return {"avg_slippage_bps": 0.0, "fill_rate": 0.0, "avg_latency_ms": 0.0}
+
+        df = pd.DataFrame(fills)
+        if df.empty:
+            return {"avg_slippage_bps": 0.0, "fill_rate": 0.0, "avg_latency_ms": 0.0}
+
+        def _meta_value(meta: Any, key: str) -> Any:
+            if isinstance(meta, Mapping):
+                return meta.get(key)
+            return None
+
+        df = df.copy()
+        df["venue"] = df["meta"].apply(lambda m: _meta_value(m, "venue"))
+        df["arrival_price"] = df["meta"].apply(lambda m: _meta_value(m, "arrival_price"))
+        df["requested_qty"] = df["meta"].apply(lambda m: _meta_value(m, "requested_qty"))
+        df["ts_order_ns"] = df["meta"].apply(lambda m: _meta_value(m, "ts_order_ns"))
+
+        df = df[(df["symbol"] == symbol) & (df["venue"] == venue)]
+        if df.empty:
+            return {"avg_slippage_bps": 0.0, "fill_rate": 0.0, "avg_latency_ms": 0.0}
+
+        # Slippage calculation (only when arrival price available and positive)
+        slippage_rows = df.dropna(subset=["arrival_price"])
+        if not slippage_rows.empty:
+            valid_arrival = slippage_rows["arrival_price"].astype(float) > 0
+            slippage_rows = slippage_rows[valid_arrival]
+        if not slippage_rows.empty:
+            slippage_bps = (
+                (
+                    slippage_rows["price"].astype(float)
+                    - slippage_rows["arrival_price"].astype(float)
+                )
+                / slippage_rows["arrival_price"].astype(float)
+            ) * 10000
+            avg_slippage_bps = float(slippage_bps.mean())
+        else:
+            avg_slippage_bps = 0.0
+
+        # Fill rate
+        filled_qty = float(df["qty"].astype(float).sum())
+        requested_series = df["requested_qty"].astype(float, errors="ignore")
+        if requested_series.dtype == "object":
+            requested_series = requested_series.apply(lambda v: float(v) if v is not None else None)
+        requested_qty = requested_series.fillna(df["qty"].astype(float)).sum()
+        fill_rate = float((filled_qty / requested_qty) * 100) if requested_qty else 100.0
+
+        # Latency in milliseconds
+        latency_rows = df.dropna(subset=["ts_order_ns"])
+        if not latency_rows.empty:
+            latencies_ms = (
+                latency_rows["ts_fill_ns"].astype(float) - latency_rows["ts_order_ns"].astype(float)
+            ) / 1_000_000
+            avg_latency_ms = float(latencies_ms.mean())
+        else:
+            avg_latency_ms = 0.0
 
         return {
-            "avg_slippage_bps": 2.5,  # Placeholder: 2.5 bps average slippage
-            "fill_rate": 98.5,  # Placeholder: 98.5% fill rate
-            "avg_latency_ms": 150.0,  # Placeholder: 150ms average latency
+            "avg_slippage_bps": avg_slippage_bps,
+            "fill_rate": fill_rate,
+            "avg_latency_ms": avg_latency_ms,
         }
