@@ -6,10 +6,18 @@ strategy performance tracking, and system health monitoring.
 
 from __future__ import annotations
 
+import logging
+from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from types import MappingProxyType
+from typing import Any, ClassVar, Literal
+
+logger = logging.getLogger(__name__)
 
 MetricType = Literal["counter", "gauge", "histogram", "summary"]
+
+_LabelKey = tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -33,20 +41,71 @@ class MetricSnapshot:
     name: str
     value: float
     timestamp_ns: int
-    labels: dict[str, str] = field(default_factory=dict)
+    labels: Mapping[str, str] = field(default_factory=dict)
     metric_type: MetricType = "gauge"
+
+    _LABEL_CARDINALITY_WARNING_THRESHOLD: ClassVar[int] = 100
+    _LABEL_CARDINALITY_MAX_TRACKED: ClassVar[int] = 128
+    _label_combinations: ClassVar[dict[str, OrderedDict[_LabelKey, None]]] = {}
+    _warned_metrics: ClassVar[set[str]] = set()
 
     def __post_init__(self) -> None:
         """Validate metric snapshot configuration."""
+        self._validate_metric_name()
+        self._validate_timestamp()
+        labels_copy = dict(self.labels)
+        self._validate_label_cardinality(labels_copy)
+        object.__setattr__(self, "labels", MappingProxyType(labels_copy))
+        self._validate_metric_type()
+        self._track_label_combination()
+
+    def _validate_metric_name(self) -> None:
         if not self.name:
             raise ValueError("name must not be empty")
+
+    def _validate_timestamp(self) -> None:
         if self.timestamp_ns < 0:
             raise ValueError(f"timestamp_ns must be >= 0, got {self.timestamp_ns}")
-        if len(self.labels) > 20:
+
+    def _validate_label_cardinality(self, labels: dict[str, str]) -> None:
+        if len(labels) > 20:
             raise ValueError(
-                f"labels must have <= 20 keys (got {len(self.labels)}). "
+                f"labels must have <= 20 keys (got {len(labels)}). "
                 "High-cardinality labels can cause performance issues."
             )
+
+    def _validate_metric_type(self) -> None:
+        if self.metric_type not in ("counter", "gauge", "histogram", "summary"):
+            raise ValueError(
+                "metric_type must be one of {'counter', 'gauge', 'histogram', 'summary'} "
+                f"(got {self.metric_type!r})"
+            )
+
+    def _track_label_combination(self) -> None:
+        if not self.labels:
+            return
+        label_key: _LabelKey = tuple(sorted(self.labels.items()))
+        combinations = self._label_combinations.setdefault(self.name, OrderedDict())
+
+        if label_key in combinations:
+            combinations.move_to_end(label_key)
+        else:
+            combinations[label_key] = None
+            if len(combinations) > self._LABEL_CARDINALITY_MAX_TRACKED:
+                combinations.popitem(last=False)
+
+        unique_count = len(combinations)
+        threshold = self._LABEL_CARDINALITY_WARNING_THRESHOLD
+        if unique_count > threshold and self.name not in self._warned_metrics:
+            logger.warning(
+                "telemetry.metric_cardinality_high",
+                extra={
+                    "metric_name": self.name,
+                    "unique_combinations": unique_count,
+                    "threshold": threshold,
+                },
+            )
+            self._warned_metrics.add(self.name)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary.
@@ -58,7 +117,7 @@ class MetricSnapshot:
             "name": self.name,
             "value": self.value,
             "timestamp_ns": self.timestamp_ns,
-            "labels": self.labels.copy(),
+            "labels": dict(self.labels),
             "metric_type": self.metric_type,
         }
 
@@ -76,7 +135,7 @@ class MetricSnapshot:
             name=data["name"],
             value=data["value"],
             timestamp_ns=data["timestamp_ns"],
-            labels=data.get("labels", {}),
+            labels=dict(data.get("labels", {})),
             metric_type=data.get("metric_type", "gauge"),
         )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import pytest
 
@@ -48,9 +49,19 @@ class TestMetricSnapshot:
                 name="test_metric",
                 value=1.0,
                 timestamp_ns=ts,
-                metric_type=metric_type,  # type: ignore
+                metric_type=metric_type,  # type: ignore[arg-type]
             )
             assert snapshot.metric_type == metric_type
+
+    def test_rejects_unknown_metric_type(self) -> None:
+        """Test MetricSnapshot rejects unsupported metric types."""
+        with pytest.raises(ValueError, match="metric_type must be one of"):
+            MetricSnapshot(
+                name="test_metric",
+                value=1.0,
+                timestamp_ns=0,
+                metric_type="invalid",  # type: ignore[arg-type]
+            )
 
     def test_rejects_empty_name(self) -> None:
         """Test MetricSnapshot rejects empty name."""
@@ -92,6 +103,32 @@ class TestMetricSnapshot:
         )
         assert len(snapshot.labels) == 20
 
+    def test_warns_on_high_cardinality_label_combinations(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test MetricSnapshot warns when label combinations exceed threshold."""
+
+        MetricSnapshot._label_combinations.clear()
+        MetricSnapshot._warned_metrics.clear()
+
+        monkeypatch.setattr(MetricSnapshot, "_LABEL_CARDINALITY_WARNING_THRESHOLD", 2)
+        monkeypatch.setattr(MetricSnapshot, "_LABEL_CARDINALITY_MAX_TRACKED", 5)
+
+        caplog.set_level("WARNING")
+
+        ts = int(time.time() * 1e9)
+        for offset in range(4):
+            MetricSnapshot(
+                name="njord_orders_total",
+                value=float(offset),
+                timestamp_ns=ts + offset,
+                labels={"strategy_id": f"strategy_{offset}"},
+            )
+
+        warning_messages = [record.message for record in caplog.records]
+        assert "telemetry.metric_cardinality_high" in warning_messages
+        assert warning_messages.count("telemetry.metric_cardinality_high") == 1
+
     def test_serializes_to_dict(self) -> None:
         """Test MetricSnapshot.to_dict()."""
         ts = int(time.time() * 1e9)
@@ -128,10 +165,22 @@ class TestMetricSnapshot:
         # Original snapshot labels should be unchanged
         assert "new_key" not in snapshot.labels
 
+    def test_labels_mapping_is_immutable(self) -> None:
+        """Test MetricSnapshot labels mapping cannot be mutated."""
+        snapshot = MetricSnapshot(
+            name="immutable_test",
+            value=1.0,
+            timestamp_ns=0,
+            labels={"key": "value"},
+        )
+
+        with pytest.raises(TypeError):
+            snapshot.labels["new_key"] = "new_value"  # type: ignore[index]
+
     def test_deserializes_from_dict(self) -> None:
         """Test MetricSnapshot.from_dict()."""
         ts = int(time.time() * 1e9)
-        data = {
+        data: dict[str, Any] = {
             "name": "njord_pnl_usd",
             "value": 1234.56,
             "timestamp_ns": ts,
@@ -141,11 +190,16 @@ class TestMetricSnapshot:
 
         snapshot = MetricSnapshot.from_dict(data)
 
+        # Mutating original data should not affect the snapshot
+        data["labels"]["strategy_id"] = "changed"
+
         assert snapshot.name == "njord_pnl_usd"
         assert snapshot.value == 1234.56
         assert snapshot.timestamp_ns == ts
         assert snapshot.labels == {"strategy_id": "momentum_v2"}
         assert snapshot.metric_type == "gauge"
+        with pytest.raises(TypeError):
+            snapshot.labels["new"] = "value"  # type: ignore[index]
 
     def test_from_dict_uses_defaults(self) -> None:
         """Test from_dict() applies defaults for optional fields."""
