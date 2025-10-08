@@ -1,6 +1,6 @@
 # Njord Quant Development Roadmap
 
-**Current Phase:** 9 — Metrics & Telemetry 📋
+**Current Phase:** 9 — Metrics & Telemetry 🚧
 **Last Updated:** 2025-10-06
 
 ## Quick Navigation
@@ -48,7 +48,7 @@
 | 6 | Portfolio Allocator | ✅ | 4 | [phase-06-portfolio.md](roadmap/phases/phase-06-portfolio.md) |
 | 7 | Research API | ✅ | 9 | [phase-07-research-api.md](roadmap/phases/phase-07-research-api.md) |
 | 8 | Execution Layer | ✅ | 10 | [phase-08-execution.md](roadmap/phases/phase-08-execution.md) |
-| 9 | Metrics & Telemetry | 📋 | 10 | [phase-09-telemetry.md](roadmap/phases/phase-09-telemetry.md) |
+| 9 | Metrics & Telemetry | 🚧 | 10 | [phase-09-telemetry.md](roadmap/phases/phase-09-telemetry.md) |
 | 10 | Live Trade Controller | 📋 | 8 | [phase-10-controller.md](roadmap/phases/phase-10-controller.md) |
 | 11 | Monitoring & Alerts | 📋 | 10 | [phase-11-monitoring.md](roadmap/phases/phase-11-monitoring.md) |
 | 12 | Compliance & Audit | 📋 | 9 | [phase-12-compliance.md](roadmap/phases/phase-12-compliance.md) |
@@ -71,7 +71,7 @@ Phase 0 (Bootstrap) ✅
                                             └─> Phase 6 (Portfolio) ✅
                                                     └─> Phase 7 (Research) ✅
                                                             └─> Phase 8 (Execution) ✅
-                                                                    └─> Phase 9 (Telemetry) 📋
+                                                                    └─> Phase 9 (Telemetry) 🚧
                                                                             └─> Phase 10 (Controller) 📋
                                                                                     └─> Phase 11 (Monitoring) 📋
                                                                                             └─> Phase 12 (Compliance) 📋
@@ -85,7 +85,7 @@ Phase 0 (Bootstrap) ✅
 
 ## Current Phase Summary
 
-**Phase 9 — Metrics & Telemetry** 📋
+**Phase 9 — Metrics & Telemetry** 🚧
 
 Implement comprehensive metrics collection, Prometheus exporter, Grafana dashboards, and real-time performance monitoring.
 
