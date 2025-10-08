@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 GRAFANA_DIR = Path(__file__).parent.parent / "deploy" / "grafana"
 DASHBOARD_FILES = [

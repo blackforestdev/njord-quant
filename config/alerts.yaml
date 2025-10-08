@@ -1,0 +1,120 @@
+# Alert rules configuration for metric threshold monitoring
+#
+# Each alert rule monitors a specific metric and fires when the threshold
+# is breached for the specified duration.
+#
+# Supported conditions: >, >=, <, <=, ==, !=
+# Duration: Seconds the condition must hold before firing (0 = immediate)
+# Labels: Alert metadata (severity, team, etc.)
+# Annotations: Alert descriptions with template support
+
+alerts:
+  # Strategy performance alerts
+  - name: high_drawdown
+    metric: njord_strategy_drawdown_pct
+    condition: "> 10.0"
+    duration: 60  # Must breach for 60 seconds
+    labels:
+      severity: critical
+      category: performance
+    annotations:
+      summary: "Strategy {{ $labels.strategy_id }} drawdown exceeded 10%"
+      description: "Current drawdown is {{ $value }}% (threshold: 10%)"
+
+  - name: low_sharpe_ratio
+    metric: njord_strategy_sharpe_ratio
+    condition: "< 0.5"
+    duration: 300  # 5 minutes
+    labels:
+      severity: warning
+      category: performance
+    annotations:
+      summary: "Strategy {{ $labels.strategy_id }} has low Sharpe ratio"
+      description: "Current Sharpe ratio is {{ $value }} (threshold: 0.5)"
+
+  - name: poor_win_rate
+    metric: njord_strategy_win_rate
+    condition: "< 0.4"
+    duration: 600  # 10 minutes
+    labels:
+      severity: warning
+      category: performance
+    annotations:
+      summary: "Strategy {{ $labels.strategy_id }} win rate below 40%"
+
+  # System health alerts
+  - name: event_loop_lag
+    metric: njord_event_loop_lag_seconds
+    condition: "> 0.1"
+    duration: 30
+    labels:
+      severity: warning
+      category: system
+    annotations:
+      summary: "Event loop lag exceeded 100ms"
+      description: "Current lag is {{ $value }}s (threshold: 0.1s)"
+
+  - name: high_memory_usage
+    metric: njord_memory_usage_mb
+    condition: "> 512.0"
+    duration: 60
+    labels:
+      severity: warning
+      category: system
+    annotations:
+      summary: "Memory usage exceeded 512MB"
+      description: "Current usage is {{ $value }}MB"
+
+  - name: critical_memory_usage
+    metric: njord_memory_usage_mb
+    condition: "> 1024.0"
+    duration: 10
+    labels:
+      severity: critical
+      category: system
+    annotations:
+      summary: "Memory usage critically high (>1GB)"
+
+  # Risk management alerts
+  - name: position_limit_breach
+    metric: njord_position_count
+    condition: "> 50"
+    duration: 0  # Fire immediately
+    labels:
+      severity: critical
+      category: risk
+    annotations:
+      summary: "Position count exceeded limit of 50"
+
+  - name: daily_loss_limit
+    metric: njord_portfolio_daily_pnl_usd
+    condition: "< -5000.0"
+    duration: 0  # Fire immediately
+    labels:
+      severity: critical
+      category: risk
+    annotations:
+      summary: "Daily loss exceeded $5000 limit"
+      description: "Current P&L: ${{ $value }}"
+
+  # Order execution alerts
+  - name: high_rejection_rate
+    metric: njord_order_rejection_rate
+    condition: "> 0.1"
+    duration: 120  # 2 minutes
+    labels:
+      severity: warning
+      category: execution
+    annotations:
+      summary: "Order rejection rate exceeded 10%"
+      description: "Current rejection rate: {{ $value }}"
+
+  - name: fill_latency_high
+    metric: njord_fill_latency_ms
+    condition: "> 1000.0"
+    duration: 60
+    labels:
+      severity: warning
+      category: execution
+    annotations:
+      summary: "Fill latency exceeded 1 second"

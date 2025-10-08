@@ -16,6 +16,7 @@ from typing import Any, ClassVar, Literal
 logger = logging.getLogger(__name__)
 
 MetricType = Literal["counter", "gauge", "histogram", "summary"]
+AlertState = Literal["pending", "firing", "resolved"]
 
 _LabelKey = tuple[tuple[str, str], ...]
 
@@ -326,4 +327,98 @@ class SystemMetrics:
             active_subscriptions=data["active_subscriptions"],
             event_loop_lag_ms=data["event_loop_lag_ms"],
             memory_usage_mb=data["memory_usage_mb"],
+        )
+
+
+@dataclass(frozen=True)
+class Alert:
+    """Alert triggered by metric threshold violation.
+
+    Attributes:
+        name: Alert rule name
+        metric_name: Name of the metric being monitored
+        condition: Threshold condition (e.g., "> 10.0", "<= 0.5")
+        current_value: Current metric value that triggered alert
+        timestamp_ns: Alert trigger timestamp (nanoseconds since epoch)
+        labels: Alert labels (includes severity, metric labels)
+        annotations: Alert annotations (summary, description, etc.)
+        state: Alert state (pending, firing, resolved)
+        duration_sec: How long condition must hold before firing
+        active_since_ns: When condition first became true (for duration tracking)
+
+    Raises:
+        ValueError: If name/metric_name/condition empty, duration_sec < 0,
+                   or timestamp_ns < 0
+    """
+
+    name: str
+    metric_name: str
+    condition: str
+    current_value: float
+    timestamp_ns: int
+    labels: Mapping[str, str] = field(default_factory=dict)
+    annotations: Mapping[str, str] = field(default_factory=dict)
+    state: AlertState = "pending"
+    duration_sec: int = 0
+    active_since_ns: int = 0
+
+    def __post_init__(self) -> None:
+        """Validate alert configuration."""
+        if not self.name:
+            raise ValueError("name must not be empty")
+        if not self.metric_name:
+            raise ValueError("metric_name must not be empty")
+        if not self.condition:
+            raise ValueError("condition must not be empty")
+        if self.timestamp_ns < 0:
+            raise ValueError(f"timestamp_ns must be >= 0, got {self.timestamp_ns}")
+        if self.duration_sec < 0:
+            raise ValueError(f"duration_sec must be >= 0, got {self.duration_sec}")
+        if self.active_since_ns < 0:
+            raise ValueError(f"active_since_ns must be >= 0, got {self.active_since_ns}")
+
+        # Make labels and annotations immutable
+        object.__setattr__(self, "labels", MappingProxyType(dict(self.labels)))
+        object.__setattr__(self, "annotations", MappingProxyType(dict(self.annotations)))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary.
+
+        Returns:
+            Dictionary representation of Alert
+        """
+        return {
+            "name": self.name,
+            "metric_name": self.metric_name,
+            "condition": self.condition,
+            "current_value": self.current_value,
+            "timestamp_ns": self.timestamp_ns,
+            "labels": dict(self.labels),
+            "annotations": dict(self.annotations),
+            "state": self.state,
+            "duration_sec": self.duration_sec,
+            "active_since_ns": self.active_since_ns,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Alert:
+        """Deserialize from dictionary.
+
+        Args:
+            data: Dictionary with alert data
+
+        Returns:
+            Alert instance
+        """
+        return cls(
+            name=data["name"],
+            metric_name=data["metric_name"],
+            condition=data["condition"],
+            current_value=data["current_value"],
+            timestamp_ns=data["timestamp_ns"],
+            labels=dict(data.get("labels", {})),
+            annotations=dict(data.get("annotations", {})),
+            state=data.get("state", "pending"),
+            duration_sec=data.get("duration_sec", 0),
+            active_since_ns=data.get("active_since_ns", 0),
         )

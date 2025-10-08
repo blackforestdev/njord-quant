@@ -9,6 +9,9 @@ repos:
     rev: v1.11.2
     hooks:
       - id: mypy
+        additional_dependencies:
+          - types-PyYAML>=6.0
+          - pyyaml>=6.0
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:

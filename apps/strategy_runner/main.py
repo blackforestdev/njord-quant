@@ -4,7 +4,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from core.bus import Bus
 from core.config import load_config

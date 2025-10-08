@@ -210,7 +210,7 @@ class Config(BaseModel):
 
 def _read_yaml(path: Path) -> dict[str, Any]:
     """Safe YAML read; returns {} if file missing/empty."""
-    import yaml  # type: ignore[import-untyped]  # lazy import
+    import yaml  # lazy import
 
     if not path.exists():
         return {}
