@@ -108,20 +108,20 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 
 ## Current Phase
 
-**Phase 9 — Metrics & Telemetry** 📋 *(Planned, Not Implemented)*
+**Phase 10 — Live Trade Controller** 📋 *(Planned, Not Implemented)*
 
 Next steps:
-- Metrics contracts (Metric, MetricSample, MetricSnapshot)
-- Prometheus exporter with HTTP /metrics endpoint
-- Service instrumentation (risk_engine, paper_trader, broker, strategies)
-- Grafana dashboard configurations (system health, trading, performance, execution)
-- Metric aggregation service with downsampling and persistence
-- Performance attribution (Brinson, factor-based, risk-adjusted)
-- Real-time metrics dashboard (WebSocket/SSE)
-- Alert system with YAML-defined rules
-- Metrics retention and cleanup
+- Controller contracts (ServiceStatus, SessionSnapshot, ControlCommand)
+- Service registry for tracking all njord services
+- Process manager with systemd integration and service lifecycle control
+- Config hot-reload with file watchers, validation, and safe reload
+- Session manager with session journaling and metadata persistence
+- Log aggregation with centralized logging, filtering, and export
+- CLI framework (`njord-ctl` commands for service control)
+- Service health checks with endpoint monitoring and dependency checks
+- Controller service integration and orchestration
 
-See **[roadmap/phases/phase-09-telemetry.md](./roadmap/phases/phase-09-telemetry.md)** for detailed specifications.
+See **[roadmap/phases/phase-10-controller.md](./roadmap/phases/phase-10-controller.md)** for detailed specifications.
 
 ## Project Structure
 
@@ -221,10 +221,13 @@ njord_quant/
 | **ohlcv_aggregator** | Real-time OHLCV candle aggregation and publishing | `apps/ohlcv_aggregator/` |
 | **replay_engine** | Event replay for backtesting and deterministic simulation | `apps/replay_engine/` |
 
-### Planned Services (Phases 9-12)
+### Implemented Services (Phase 9)
 
-- **Phase 9:** Metric aggregator, Prometheus exporter, real-time metrics dashboard, alert service
-- **Phase 10:** Process manager (`njord-ctl` CLI), config hot-reload, session tracking
+- **metrics_dashboard** (Phase 9): Real-time metrics dashboard with SSE streaming on `http://localhost:8080`
+
+### Planned Services (Phases 10-12)
+
+- **Phase 10:** Process manager (`njord-ctl` CLI), config hot-reload, session tracking, health checks
 - **Phase 11:** Alert service with multi-channel notifications (log/Redis/webhook/email/Slack)
 - **Phase 12:** Audit service with immutable logging, replay validation, and regulatory exports
 
@@ -239,8 +242,9 @@ njord_quant/
 | `config/portfolio.yaml` | Portfolio allocation and rebalancing rules |
 | `config/secrets.enc.yaml` | SOPS-encrypted secrets (API keys, credentials) |
 
-### Planned Configuration (Phases 8-12)
+### Planned Configuration (Phases 10-12)
 
+- `config/controller.yaml` — Service registry and process management settings (Phase 10)
 - `config/alerts.yaml` — Alert rules and notification channels (Phase 11)
 - `config/compliance.yaml` — Audit/replay settings, regulatory export templates (Phase 12)
 
@@ -264,16 +268,26 @@ njord_quant/
   - Redis-based: `njord:killswitch` key trips all services
 - **Operational Scripts:** Located in `scripts/` for kill-switch control, status checks
 
-### Planned (Phases 9-12)
+### Implemented (Phase 9)
 
 - **Phase 9 — Metrics & Telemetry:**
-  - Prometheus exporter on `http://localhost:9090/metrics`
-  - Grafana dashboards (system health, trading activity, strategy performance)
-  - Real-time metrics dashboard on `http://localhost:8080`
+  - Prometheus exporter on `http://localhost:9091/metrics`
+  - Comprehensive metric contracts and registry
+  - Metric aggregation service with downsampling and persistence
+  - Performance attribution engine (Brinson, alpha/beta)
+  - Real-time metrics dashboard on `http://localhost:8080` with SSE streaming
+  - YAML-based alert rules engine with deduplication
+  - Metrics retention management with automated cleanup and compression
+  - Complete telemetry documentation
+
+### Planned (Phases 10-12)
+
 - **Phase 10 — Process Control:**
   - `njord-ctl` CLI for start/stop/restart/reload/status/logs/session management
+  - Config hot-reload with validation
+  - Session tracking and health checks
 - **Phase 11 — Monitoring & Alerts:**
-  - Alert rules engine, multi-channel notifications
+  - Enhanced alert rules engine, multi-channel notifications
   - Publishes to `var/log/njord/alerts.ndjson` and configured channels
 - **Phase 12 — Compliance & Audit:**
   - Immutable audit logging, deterministic replay validation
@@ -302,14 +316,14 @@ njord_quant/
 - **Process Manager (Planned):** Checks kill-switch before starting live services (refuses if tripped)
 - **Alert Integration (Planned):** Critical alerts fire when kill-switch triggered
 
-### Network Security (Planned — Phase 9+)
+### Network Security (Implemented Phase 9 / Planned Phases 10-12)
 
-*The following bindings apply to planned services (Phases 9-12):*
+*The following bindings apply to telemetry and planned services (Phases 9-12):*
 
-- **Metrics Exporter:** Binds to `127.0.0.1:9090` by default (Prometheus scraper must be local or tunneled)
-- **Metrics Dashboard:** Binds to `127.0.0.1:8080` by default (web access via SSH tunnel or local browser)
-- **Controller API:** Binds to `127.0.0.1:9091` by default (njord-ctl commands local only)
-- **Alert Service:** Health check on `127.0.0.1:9092` by default
+- **Metrics Exporter (Phase 9):** Binds to `127.0.0.1:9091` by default (Prometheus scraper must be local or tunneled)
+- **Metrics Dashboard (Phase 9):** Binds to `127.0.0.1:8080` by default (web access via SSH tunnel or local browser)
+- **Controller API (Phase 10):** Binds to `127.0.0.1:9092` by default (njord-ctl commands local only)
+- **Alert Service (Phase 11):** Health check on `127.0.0.1:9093` by default
 - **Production Access:** Explicitly set `bind_host` parameter to expose on network interfaces
 
 ## Make Targets
@@ -371,7 +385,7 @@ make journal       # Tail journal logs
 
 ## Roadmap Snapshot
 
-### ✅ Implemented (Phases 0-8)
+### ✅ Implemented (Phases 0-9)
 
 - **Phase 0 — Bootstrap & Guardrails:** Tooling, config loader, structured logging, NDJSON journal
 - **Phase 1 — Event Bus & Market Data:** Redis bus, contracts, market data ingest daemon
@@ -382,12 +396,12 @@ make journal       # Tail journal logs
 - **Phase 6 — Portfolio Allocator:** Multi-strategy capital allocation, risk adjustment, portfolio backtesting, reporting
 - **Phase 7 — Research API:** Data reader, aggregation stack, research CLI, documentation
 - **Phase 8 — Execution Layer:** TWAP/VWAP/Iceberg/POV algorithms, slippage models, smart order router, execution simulator, performance metrics
+- **Phase 9 — Metrics & Telemetry:** Prometheus exporter, metric contracts, aggregation service, performance attribution, real-time dashboard, alert system, retention management, complete documentation
 
-### 📋 Planned (Phases 9-16)
+### 📋 Planned (Phases 10-16)
 
-**Note:** Fully specified in roadmap, not yet implemented. Implementation follows dependency order: 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16.
+**Note:** Fully specified in roadmap, not yet implemented. Implementation follows dependency order: 10 → 11 → 12 → 13 → 14 → 15 → 16.
 
-- **Phase 9 — Metrics & Telemetry:** Prometheus exporter, Grafana dashboards, performance attribution, real-time metrics
 - **Phase 10 — Live Trade Controller:** Unified CLI (njord-ctl), process management, config hot-reload, session tracking
 - **Phase 11 — Monitoring & Alerts:** Alert rules engine, multi-channel notifications, deduplication
 - **Phase 12 — Compliance & Audit:** Immutable audit logging, deterministic replay validation, regulatory exports
@@ -406,6 +420,6 @@ See **[ROADMAP.md](./ROADMAP.md)** for complete phase index and navigation to de
 
 ---
 
-**Last Updated:** 2025-10-06
-**Current Phase:** 9 (Metrics & Telemetry) — Planned, not implemented
-**Roadmap Status:** Phases 0-8 complete ✅ | Phases 9-16 specified 📋
+**Last Updated:** 2025-10-07
+**Current Phase:** 10 (Live Trade Controller) — Planned, not implemented
+**Roadmap Status:** Phases 0-9 complete ✅ | Phases 10-16 specified 📋
