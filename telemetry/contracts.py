@@ -422,3 +422,110 @@ class Alert:
             duration_sec=data.get("duration_sec", 0),
             active_since_ns=data.get("active_since_ns", 0),
         )
+
+
+@dataclass(frozen=True)
+class RetentionLevel:
+    """Single retention level configuration.
+
+    Attributes:
+        resolution: Time resolution (e.g., "1m", "5m", "1h", "1d")
+        retention_days: Number of days to retain at this resolution
+
+    Raises:
+        ValueError: If resolution is empty or retention_days < 0
+    """
+
+    resolution: str
+    retention_days: int
+
+    def __post_init__(self) -> None:
+        """Validate retention level configuration."""
+        if not self.resolution:
+            raise ValueError("resolution must not be empty")
+        if self.retention_days < 0:
+            raise ValueError(f"retention_days must be >= 0, got {self.retention_days}")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary.
+
+        Returns:
+            Dictionary representation of RetentionLevel
+        """
+        return {
+            "resolution": self.resolution,
+            "retention_days": self.retention_days,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RetentionLevel:
+        """Deserialize from dictionary.
+
+        Args:
+            data: Dictionary with retention level data
+
+        Returns:
+            RetentionLevel instance
+        """
+        return cls(
+            resolution=data["resolution"],
+            retention_days=data["retention_days"],
+        )
+
+
+@dataclass(frozen=True)
+class RetentionPolicy:
+    """Metrics retention policy configuration.
+
+    Attributes:
+        raw_metrics: List of retention levels for raw metrics
+        cleanup_schedule: Cron schedule for cleanup (e.g., "0 2 * * *")
+
+    Raises:
+        ValueError: If raw_metrics is empty or cleanup_schedule is invalid
+    """
+
+    raw_metrics: tuple[RetentionLevel, ...]
+    cleanup_schedule: str = "0 2 * * *"
+
+    def __post_init__(self) -> None:
+        """Validate retention policy configuration."""
+        if not self.raw_metrics:
+            raise ValueError("raw_metrics must not be empty")
+        if not self.cleanup_schedule:
+            raise ValueError("cleanup_schedule must not be empty")
+
+        # Validate cron schedule format (5 space-separated fields)
+        parts = self.cleanup_schedule.split()
+        if len(parts) != 5:
+            raise ValueError(
+                f"cleanup_schedule must have 5 space-separated fields (cron format), "
+                f"got {len(parts)}: {self.cleanup_schedule}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary.
+
+        Returns:
+            Dictionary representation of RetentionPolicy
+        """
+        return {
+            "raw_metrics": [level.to_dict() for level in self.raw_metrics],
+            "cleanup_schedule": self.cleanup_schedule,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RetentionPolicy:
+        """Deserialize from dictionary.
+
+        Args:
+            data: Dictionary with retention policy data
+
+        Returns:
+            RetentionPolicy instance
+        """
+        raw_metrics_data = data.get("raw_metrics", [])
+        return cls(
+            raw_metrics=tuple(RetentionLevel.from_dict(level) for level in raw_metrics_data),
+            cleanup_schedule=data.get("cleanup_schedule", "0 2 * * *"),
+        )
