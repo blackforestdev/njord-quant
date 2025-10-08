@@ -1,13 +1,13 @@
 # Njord Quant Development Roadmap
 
-**Current Phase:** 9 — Metrics & Telemetry 🚧
-**Last Updated:** 2025-10-06
+**Current Phase:** 10 — Live Trade Controller 📋
+**Last Updated:** 2025-10-07
 
 ## Quick Navigation
 
 - [How to Use This Roadmap](#how-to-use-this-roadmap)
 - [Phase Index](#phase-index)
-- [Current Phase Details](roadmap/phases/phase-08-execution.md)
+- [Current Phase Details](roadmap/phases/phase-10-controller.md)
 - [Dependencies Graph](#dependencies-graph)
 
 ---
@@ -48,7 +48,7 @@
 | 6 | Portfolio Allocator | ✅ | 4 | [phase-06-portfolio.md](roadmap/phases/phase-06-portfolio.md) |
 | 7 | Research API | ✅ | 9 | [phase-07-research-api.md](roadmap/phases/phase-07-research-api.md) |
 | 8 | Execution Layer | ✅ | 10 | [phase-08-execution.md](roadmap/phases/phase-08-execution.md) |
-| 9 | Metrics & Telemetry | 🚧 | 10 | [phase-09-telemetry.md](roadmap/phases/phase-09-telemetry.md) |
+| 9 | Metrics & Telemetry | ✅ | 10 | [phase-09-telemetry.md](roadmap/phases/phase-09-telemetry.md) |
 | 10 | Live Trade Controller | 📋 | 8 | [phase-10-controller.md](roadmap/phases/phase-10-controller.md) |
 | 11 | Monitoring & Alerts | 📋 | 10 | [phase-11-monitoring.md](roadmap/phases/phase-11-monitoring.md) |
 | 12 | Compliance & Audit | 📋 | 9 | [phase-12-compliance.md](roadmap/phases/phase-12-compliance.md) |
@@ -71,7 +71,7 @@ Phase 0 (Bootstrap) ✅
                                             └─> Phase 6 (Portfolio) ✅
                                                     └─> Phase 7 (Research) ✅
                                                             └─> Phase 8 (Execution) ✅
-                                                                    └─> Phase 9 (Telemetry) 🚧
+                                                                    └─> Phase 9 (Telemetry) ✅
                                                                             └─> Phase 10 (Controller) 📋
                                                                                     └─> Phase 11 (Monitoring) 📋
                                                                                             └─> Phase 12 (Compliance) 📋
@@ -85,25 +85,23 @@ Phase 0 (Bootstrap) ✅
 
 ## Current Phase Summary
 
-**Phase 9 — Metrics & Telemetry** 🚧
+**Phase 10 — Live Trade Controller** 📋
 
-Implement comprehensive metrics collection, Prometheus exporter, Grafana dashboards, and real-time performance monitoring.
+Implement unified CLI for managing all trading services with config hot-reload and session journaling.
 
 **Sub-Phases:**
-- 9.0: Metrics Contracts (Metric, MetricSample, MetricSnapshot)
-- 9.1: Prometheus Exporter (HTTP /metrics endpoint)
-- 9.2: Service Instrumentation (risk_engine, paper_trader, broker, strategies)
-- 9.3: Grafana Dashboard Configs (system health, trading, performance, execution)
-- 9.4: Metric Aggregation Service (downsampling and persistence)
-- 9.5: Performance Attribution (Brinson, factor-based, risk-adjusted)
-- 9.6: Real-time Metrics Dashboard (WebSocket/SSE)
-- 9.7: Alert System (YAML-defined rules)
-- 9.8: Metrics Retention and Cleanup
-- 9.9: Metrics Integration Testing
+- 10.0: Controller Contracts (ServiceStatus, SessionSnapshot, ControlCommand)
+- 10.1: Process Manager (systemd integration, service lifecycle)
+- 10.2: Config Hot-Reload (file watchers, validation, safe reload)
+- 10.3: Session Tracking (session journaling, metadata persistence)
+- 10.4: Health Check System (endpoint monitoring, dependency checks)
+- 10.5: Log Aggregation (centralized logging, filtering, export)
+- 10.6: CLI Tool (`njord-ctl` commands)
+- 10.7: Controller Integration Testing
 
-**Full Details:** [roadmap/phases/phase-09-telemetry.md](roadmap/phases/phase-09-telemetry.md)
+**Full Details:** [roadmap/phases/phase-10-controller.md](roadmap/phases/phase-10-controller.md)
 
-**Note:** Phases 9-16 have detailed specifications but are not yet implemented. Implementation follows dependency order (9 → 10 → 11 → 12 → 13 → 14 → 15 → 16).
+**Note:** Phases 10-16 have detailed specifications but are not yet implemented. Implementation follows dependency order (10 → 11 → 12 → 13 → 14 → 15 → 16).
 
 ---
 

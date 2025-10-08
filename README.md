@@ -10,7 +10,7 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 
 ## Core Capabilities
 
-### ✅ Implemented (Phases 0-8)
+### ✅ Implemented (Phases 0-9)
 
 #### Trading Infrastructure (Phases 0-3)
 - Market data ingestion with deduplication, journaling, and reconnect logic
@@ -32,12 +32,22 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - Execution simulator for backtest integration with deterministic fill generation
 - Performance metrics tracker (implementation shortfall, benchmark comparisons, algorithm analysis)
 
-### 📋 Planned (Phases 9-16)
+#### Observability (Phase 9)
+- Prometheus metrics exporter with HTTP /metrics endpoint
+- Comprehensive metric contracts (MetricSnapshot, StrategyMetrics, SystemMetrics)
+- Grafana dashboard configurations (system health, trading activity, strategy performance, execution quality)
+- Metric aggregation service with downsampling and persistence
+- Performance attribution engine (Brinson attribution, alpha/beta analysis)
+- Real-time metrics dashboard with WebSocket/SSE streaming
+- YAML-based alert rules engine with deduplication and multi-channel notifications
+- Metrics retention management with automated cleanup and compression
+- Complete telemetry documentation (metrics catalog, setup guide, operations runbook, API reference)
 
-**Note:** Phases 9-16 are fully specified in the roadmap but not yet implemented. Implementation follows dependency order.
+### 📋 Planned (Phases 10-16)
 
-#### Observability & Compliance (Phases 9-12)
-- **Phase 9 — Metrics & Telemetry:** Prometheus exporter, Grafana dashboards, performance attribution, real-time metrics
+**Note:** Phases 10-16 are fully specified in the roadmap but not yet implemented. Implementation follows dependency order.
+
+#### Observability & Compliance (Phases 10-12)
 - **Phase 10 — Live Trade Controller:** Unified CLI (`njord-ctl`), process management, config hot-reload, session tracking
 - **Phase 11 — Monitoring & Alerts:** Alert rules engine, multi-channel notifications, deduplication
 - **Phase 12 — Compliance & Audit:** Immutable audit logging, deterministic replay validation, regulatory exports
@@ -68,12 +78,14 @@ Njord Quant is an enterprise-grade, local-first trading stack for cryptocurrency
 - **portfolio/**: Multi-strategy allocator components (contracts, allocation logic, rebalancer, backtests, reporting)
 - **research/**: Data reader, aggregation stack, validation tools, export utilities, research CLI
 - **execution/**: Execution algorithms (TWAP, VWAP, Iceberg, POV), slippage models, smart order router, performance tracker
+- **telemetry/**: Prometheus exporter, metric contracts, aggregation service, performance attribution, alert manager, retention policies
+- **apps/metrics_dashboard/**: Real-time metrics dashboard with SSE streaming and interactive UI
+- **docs/telemetry/**: Complete documentation (metrics catalog, Grafana setup guide, operations runbook, API reference)
 - **tests/**: Unit, integration, and golden test suites (80+ test files) ensuring strict guardrails
 - **var/**: Structured logs and runtime state (append-only NDJSON)
 
-### Planned Components (Phases 9-16)
+### Planned Components (Phases 10-16)
 
-- **telemetry/** (Phase 9): Prometheus exporter, metric aggregation, performance attribution, real-time dashboard
 - **controller/** (Phase 10): Process manager, config hot-reload, session tracking, health checks, log aggregation
 - **alerts/** (Phase 11): Alert rules engine, notification channels (log/Redis/webhook/email/Slack), alert CLI
 - **compliance/** (Phase 12): Audit logger, replay engine, order book reconstruction, regulatory reporting
