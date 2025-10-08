@@ -8,10 +8,15 @@ from controller.contracts import (
     SessionSnapshot,
     SessionStatusType,
 )
+from controller.metadata import ServiceGroup, ServiceMetadata
+from controller.registry import ServiceRegistry
 
 __all__ = [
     "ControlCommand",
     "ControlCommandType",
+    "ServiceGroup",
+    "ServiceMetadata",
+    "ServiceRegistry",
     "ServiceStatus",
     "ServiceStatusType",
     "SessionSnapshot",
