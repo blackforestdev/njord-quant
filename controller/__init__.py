@@ -10,8 +10,10 @@ from controller.contracts import (
 )
 from controller.metadata import ServiceGroup, ServiceMetadata
 from controller.registry import ServiceRegistry
+from controller.reload import ConfigReloader
 
 __all__ = [
+    "ConfigReloader",
     "ControlCommand",
     "ControlCommandType",
     "ServiceGroup",

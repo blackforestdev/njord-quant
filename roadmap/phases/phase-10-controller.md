@@ -254,8 +254,8 @@ class ProcessManager:
 
 ---
 
-### Phase 10.3 — Config Hot-Reload 📋
-**Status:** Planned
+### Phase 10.3 — Config Hot-Reload ✅
+**Status:** Complete
 **Dependencies:** 10.2 (Process Manager)
 **Task:** Implement configuration hot-reload without service restart
 
@@ -332,9 +332,9 @@ async for msg in bus.subscribe("controller.reload"):
 ```
 
 **Files:**
-- `controller/reload.py` (180 LOC)
-- Update `apps/*/main.py` to handle reload signal (+20 LOC each)
-- `tests/test_config_reload.py`
+- `controller/reload.py` (299 LOC)
+- `tests/test_config_reload.py` (27 tests, 458 LOC)
+- Update `apps/*/main.py` to handle reload signal (future work)
 
 **Acceptance:**
 - Detects config file changes (inotify on Linux, polling fallback for cross-platform)
